@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;450;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; padding:0; background:#0e0f11; }
+  * { box-sizing:border-box; }
+  a { color:#c1502e; text-decoration:none; }
+  a:hover { color:#c1502e; text-decoration:underline; }
+</style>
+</helmet>
+
+<div style="min-height:100vh; background:#0e0f11; padding:52px 56px 72px; font-family:'IBM Plex Sans', system-ui, sans-serif; color:#e9e7e2;">
+  <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:6px;">
+    <h1 style="font-size:22px; font-weight:600; letter-spacing:-.02em; margin:0;">MarkDownViewer — Mobile</h1>
+    <span style="font-size:13px; color:#75726b;">same tokens, compact ergonomics · thumb-reach controls</span>
+  </div>
+  <p style="font-size:13.5px; color:#9b988f; margin:0 0 36px; max-width:640px; line-height:1.6;">Four screens: Library, Reader, the outline sheet, and Search (dark). Bottom-anchored controls, 44px+ targets, one document at a time instead of tabs.</p>
+
+  <div style="display:flex; gap:44px; align-items:flex-start; flex-wrap:wrap;">
+
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <span style="font-size:12px; color:#75726b; font-family:'JetBrains Mono', monospace;">01 · Library</span>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="390px,844px">
+        <div style="height:100%; display:flex; flex-direction:column; background:#f7f6f3; font-family:'IBM Plex Sans', system-ui, sans-serif;">
+          <div style="padding:66px 20px 14px; background:#ffffff; border-bottom:1px solid #e3dfd8;">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+              <div style="width:26px; height:26px; border-radius:7px; background:linear-gradient(150deg,#2a2d34 0%,#17181c 70%); box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); display:flex; align-items:center; justify-content:center;">
+                <svg viewBox="0 0 24 24" style="width:26px; height:26px;"><path d="M7.3 6.3 L3.8 12 L7.3 17.7" fill="none" stroke="#e2714a" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity="0.45"></path><path d="M16.7 6.3 L20.2 12 L16.7 17.7" fill="none" stroke="#e2714a" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity="0.45"></path><path d="M8.8 16 L8.8 8.8 L12 12.4 L15.2 8.8 L15.2 16" fill="none" stroke="#ffb27d" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </div>
+              <span style="font-size:17px; font-weight:600; letter-spacing:-.2px; color:#1b1b1e;">MarkDown<span style="color:#96928a; font-weight:500;">Viewer</span></span>
+              <div style="flex:1;"></div>
+              <div style="width:34px; height:34px; border-radius:17px; background:#f1efeb; display:flex; align-items:center; justify-content:center; font-size:15px; color:#6c6960;">☾</div>
+            </div>
+            <div style="height:40px; border-radius:10px; background:#f1efeb; border:1px solid #e3dfd8; display:flex; align-items:center; gap:8px; padding:0 12px;">
+              <span style="font-size:14px; color:#96928a;">⌕</span>
+              <span style="font-size:14px; color:#96928a;">Search files and headings</span>
+            </div>
+          </div>
+          <div style="flex:1; overflow:hidden; padding:8px 12px;">
+            <div style="font-size:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:#96928a; padding:10px 8px 6px;">MarkDownViewer</div>
+            <div style="display:flex; flex-direction:column;">
+              <div style="display:flex; align-items:center; gap:12px; height:48px; padding:0 8px; border-radius:10px;">
+                <span style="font-size:10px; color:#96928a; width:10px;">▾</span><span style="opacity:.75;">📁</span><span style="font-size:15px; color:#1b1b1e;">docs</span><div style="flex:1;"></div><span style="font-size:12px; color:#96928a; font-family:'JetBrains Mono', monospace;">2</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px; height:48px; padding:0 8px 0 30px; border-radius:10px;">
+                <span style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#c1502e; width:12px;">M</span><span style="font-size:15px; color:#1b1b1e;">Design.md</span><div style="flex:1;"></div><span style="font-size:13px; color:#c8c4bc;">›</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px; height:48px; padding:0 8px 0 30px; border-radius:10px;">
+                <span style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#c1502e; width:12px;">M</span><span style="font-size:15px; color:#1b1b1e;">Benchmarks.md</span><div style="flex:1;"></div><span style="font-size:13px; color:#c8c4bc;">›</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px; height:48px; padding:0 8px; border-radius:10px;">
+                <span style="font-size:10px; color:#96928a; width:10px;">▸</span><span style="opacity:.75;">📁</span><span style="font-size:15px; color:#1b1b1e;">third_party</span><div style="flex:1;"></div><span style="font-size:12px; color:#96928a; font-family:'JetBrains Mono', monospace;">7</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px; height:48px; padding:0 8px; border-radius:10px; background:rgba(193,80,46,.10);">
+                <span style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#c1502e; width:12px; margin-left:22px;">M</span><span style="font-size:15px; color:#c1502e; font-weight:500;">README.md</span><div style="flex:1;"></div><span style="font-size:13px; color:#c1502e;">›</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px; height:48px; padding:0 8px; border-radius:10px;">
+                <span style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#c1502e; width:12px; margin-left:22px;">M</span><span style="font-size:15px; color:#1b1b1e;">CHANGELOG.md</span><div style="flex:1;"></div><span style="font-size:13px; color:#c8c4bc;">›</span>
+              </div>
+            </div>
+            <div style="font-size:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:#96928a; padding:18px 8px 6px;">Recent</div>
+            <div style="display:flex; flex-direction:column;">
+              <div style="display:flex; align-items:center; gap:12px; height:48px; padding:0 8px; border-radius:10px;">
+                <span style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#c1502e; width:12px;">M</span><span style="font-size:15px; color:#1b1b1e;">2026-08-04.md</span><div style="flex:1;"></div><span style="font-size:12px; color:#96928a; font-family:'JetBrains Mono', monospace;">2h</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px; height:48px; padding:0 8px; border-radius:10px;">
+                <span style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#c1502e; width:12px;">M</span><span style="font-size:15px; color:#1b1b1e;">document-model.md</span><div style="flex:1;"></div><span style="font-size:12px; color:#96928a; font-family:'JetBrains Mono', monospace;">1d</span>
+              </div>
+            </div>
+          </div>
+          <div style="height:88px; background:rgba(255,255,255,.92); backdrop-filter:blur(12px); border-top:1px solid #e3dfd8; display:flex; padding:8px 12px 30px;">
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;">
+              <span style="font-size:19px; color:#c1502e;">▤</span><span style="font-size:10.5px; font-weight:500; color:#c1502e;">Library</span>
+            </div>
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;">
+              <span style="font-size:19px; color:#96928a;">⌕</span><span style="font-size:10.5px; color:#96928a;">Search</span>
+            </div>
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;">
+              <span style="font-size:19px; color:#96928a;">⚙</span><span style="font-size:10.5px; color:#96928a;">Settings</span>
+            </div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <span style="font-size:12px; color:#75726b; font-family:'JetBrains Mono', monospace;">02 · Reader</span>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="390px,844px">
+        <div style="height:100%; display:flex; flex-direction:column; background:#f7f6f3; font-family:'IBM Plex Sans', system-ui, sans-serif; position:relative;">
+          <div style="display:flex; align-items:center; gap:6px; padding:64px 12px 8px; background:rgba(247,246,243,.94); backdrop-filter:blur(12px); border-bottom:1px solid #eeebe5;">
+            <div style="width:38px; height:38px; display:flex; align-items:center; justify-content:center; border-radius:19px; color:#c1502e; font-size:20px;">‹</div>
+            <div style="flex:1; min-width:0; display:flex; flex-direction:column; align-items:center;">
+              <span style="font-size:14px; font-weight:600; color:#1b1b1e;">README.md</span>
+              <span style="font-size:10.5px; color:#96928a; font-family:'JetBrains Mono', monospace;">MarkDownViewer · 5 min</span>
+            </div>
+            <div style="width:38px; height:38px; display:flex; align-items:center; justify-content:center; border-radius:19px; color:#6c6960; font-size:15px;">⇪</div>
+          </div>
+          <div style="height:2px; background:#eeebe5;"><div style="width:34%; height:100%; background:#c1502e;"></div></div>
+          <div style="flex:1; overflow:hidden; padding:22px 20px;">
+            <h1 style="font-family:'Source Serif 4', Georgia, serif; font-size:27px; font-weight:700; letter-spacing:-.02em; line-height:1.15; margin:0 0 12px; color:#1b1b1e;">MarkDownViewer</h1>
+            <div style="display:flex; gap:5px; margin:0 0 16px; flex-wrap:wrap;">
+              <span style="display:flex; font-family:'JetBrains Mono', monospace; font-size:9.5px; border-radius:4px; overflow:hidden; border:1px solid #e3dfd8;"><span style="padding:2px 6px; background:#f1efeb; color:#6c6960;">Go</span><span style="padding:2px 6px; background:#c1502e; color:#fff;">1.26+</span></span>
+              <span style="display:flex; font-family:'JetBrains Mono', monospace; font-size:9.5px; border-radius:4px; overflow:hidden; border:1px solid #e3dfd8;"><span style="padding:2px 6px; background:#f1efeb; color:#6c6960;">CommonMark</span><span style="padding:2px 6px; background:#c1502e; color:#fff;">652/652</span></span>
+              <span style="display:flex; font-family:'JetBrains Mono', monospace; font-size:9.5px; border-radius:4px; overflow:hidden; border:1px solid #e3dfd8;"><span style="padding:2px 6px; background:#f1efeb; color:#6c6960;">release</span><span style="padding:2px 6px; background:#c1502e; color:#fff;">v0.1.0</span></span>
+            </div>
+            <p style="font-size:15px; line-height:1.68; color:#1b1b1e; margin:0 0 14px; text-wrap:pretty;">A modern, embeddable Markdown viewer library for Go. Feed it Markdown, get back self-contained, themed, sanitized HTML — no CDN calls, no external assets, safe to render untrusted input by default.</p>
+            <div style="display:flex; gap:10px; padding:12px 14px; border-radius:10px; background:rgba(193,80,46,.10); margin:0 0 16px;">
+              <span style="color:#c1502e; font-size:13px;">⚠</span>
+              <div>
+                <div style="font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:#c1502e; margin-bottom:3px;">v0.x — API not yet frozen</div>
+                <div style="font-size:13.5px; line-height:1.6; color:#1b1b1e;">Expect additive evolution — source positions, JSON serialization — before v1.0 commits to compatibility.</div>
+              </div>
+            </div>
+            <h2 style="font-family:'Source Serif 4', Georgia, serif; font-size:19px; font-weight:600; margin:22px 0 10px; padding-bottom:6px; border-bottom:1px solid #e3dfd8; color:#1b1b1e;">Install</h2>
+            <div style="border:1px solid #e3dfd8; border-radius:10px; overflow:hidden; background:#f4f2ee; margin:0 0 16px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 12px; border-bottom:1px solid #eeebe5;">
+                <span style="font-family:'JetBrains Mono', monospace; font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:#96928a;">shell</span>
+                <span style="font-size:11px; color:#96928a;">Copy</span>
+              </div>
+              <pre style="font-family:'JetBrains Mono', monospace; font-size:12px; line-height:1.6; padding:12px 14px; margin:0; overflow-x:auto; color:#1b1b1e;"><span style="color:#2f6bbf;">go get</span> github.com/sriannamalai/
+  markdownviewer</pre>
+            </div>
+            <h2 style="font-family:'Source Serif 4', Georgia, serif; font-size:19px; font-weight:600; margin:22px 0 10px; padding-bottom:6px; border-bottom:1px solid #e3dfd8; color:#1b1b1e;">Features</h2>
+            <p style="font-size:15px; line-height:1.68; color:#1b1b1e; margin:0; text-wrap:pretty;">652/652 CommonMark spec examples verified, plus GFM tables, footnotes, KaTeX math and mermaid — all rendered offline…</p>
+          </div>
+          <div style="position:absolute; left:0; right:0; bottom:0; height:78px; background:rgba(255,255,255,.92); backdrop-filter:blur(12px); border-top:1px solid #e3dfd8; display:flex; align-items:center; gap:6px; padding:0 10px 24px;">
+            <div style="height:40px; display:flex; align-items:center; gap:7px; padding:0 14px; border-radius:20px; background:#f1efeb; color:#1b1b1e; font-size:13px; font-weight:500;">☰ Outline</div>
+            <div style="flex:1;"></div>
+            <span style="font-size:11px; color:#96928a; font-family:'JetBrains Mono', monospace;">Features · 34%</span>
+            <div style="width:40px; height:40px; border-radius:20px; background:#f1efeb; display:flex; align-items:center; justify-content:center; color:#6c6960; font-size:14px;">Aa</div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <span style="font-size:12px; color:#75726b; font-family:'JetBrains Mono', monospace;">03 · Outline sheet</span>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="390px,844px">
+        <div style="height:100%; display:flex; flex-direction:column; background:#f7f6f3; font-family:'IBM Plex Sans', system-ui, sans-serif; position:relative;">
+          <div style="display:flex; align-items:center; gap:6px; padding:64px 12px 8px; border-bottom:1px solid #eeebe5; filter:blur(1px); opacity:.55;">
+            <div style="width:38px; height:38px; display:flex; align-items:center; justify-content:center; color:#c1502e; font-size:20px;">‹</div>
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center;">
+              <span style="font-size:14px; font-weight:600; color:#1b1b1e;">README.md</span>
+              <span style="font-size:10.5px; color:#96928a; font-family:'JetBrains Mono', monospace;">MarkDownViewer · 5 min</span>
+            </div>
+            <div style="width:38px;"></div>
+          </div>
+          <div style="flex:1; padding:22px 20px; filter:blur(1px); opacity:.55; overflow:hidden;">
+            <h1 style="font-family:'Source Serif 4', Georgia, serif; font-size:27px; font-weight:700; margin:0 0 12px; color:#1b1b1e;">MarkDownViewer</h1>
+            <p style="font-size:15px; line-height:1.68; color:#1b1b1e;">A modern, embeddable Markdown viewer library for Go. Feed it Markdown, get back self-contained, themed, sanitized HTML — no CDN calls, no external assets…</p>
+          </div>
+          <div style="position:absolute; inset:0; background:rgba(10,11,12,.28);"></div>
+          <div style="position:absolute; left:0; right:0; bottom:0; background:#ffffff; border-radius:18px 18px 0 0; box-shadow:0 -12px 40px rgba(0,0,0,.18); padding:10px 8px 40px;">
+            <div style="width:40px; height:4px; border-radius:2px; background:#e3dfd8; margin:0 auto 12px;"></div>
+            <div style="display:flex; align-items:baseline; justify-content:space-between; padding:0 14px 10px;">
+              <span style="font-size:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:#96928a;">On this page</span>
+              <span style="font-size:11px; color:#96928a; font-family:'JetBrains Mono', monospace;">1,140 words · 5 min</span>
+            </div>
+            <div style="display:flex; flex-direction:column; padding:0 6px;">
+              <div style="display:flex; align-items:center; height:44px; padding:0 14px; border-radius:10px; font-size:15px; font-weight:500; color:#6c6960;">MarkDownViewer</div>
+              <div style="display:flex; align-items:center; height:44px; padding:0 14px 0 28px; border-radius:10px; font-size:15px; color:#6c6960;">Status</div>
+              <div style="display:flex; align-items:center; height:44px; padding:0 14px 0 28px; border-radius:10px; background:rgba(193,80,46,.10); font-size:15px; font-weight:600; color:#c1502e;">Features</div>
+              <div style="display:flex; align-items:center; height:44px; padding:0 14px 0 28px; border-radius:10px; font-size:15px; color:#6c6960;">Install</div>
+              <div style="display:flex; align-items:center; height:44px; padding:0 14px 0 28px; border-radius:10px; font-size:15px; color:#6c6960;">Quick start</div>
+              <div style="display:flex; align-items:center; height:44px; padding:0 14px 0 42px; border-radius:10px; font-size:15px; color:#96928a;">Rewriting links and images</div>
+              <div style="display:flex; align-items:center; height:44px; padding:0 14px 0 28px; border-radius:10px; font-size:15px; color:#6c6960;">Security model</div>
+              <div style="display:flex; align-items:center; height:44px; padding:0 14px 0 28px; border-radius:10px; font-size:15px; color:#6c6960;">License</div>
+            </div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <span style="font-size:12px; color:#75726b; font-family:'JetBrains Mono', monospace;">04 · Search (dark)</span>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" keyboard="{{ true }}" hint-size="390px,844px">
+        <div style="height:100%; display:flex; flex-direction:column; background:#131418; font-family:'IBM Plex Sans', system-ui, sans-serif;">
+          <div style="padding:66px 16px 12px; background:#1a1c21; border-bottom:1px solid #2c3037;">
+            <div style="height:40px; border-radius:10px; background:#212429; border:1px solid rgba(233,122,82,.4); display:flex; align-items:center; gap:8px; padding:0 12px;">
+              <span style="font-size:14px; color:#75726b;">⌕</span>
+              <span style="font-size:14px; color:#e9e7e2; font-family:'JetBrains Mono', monospace;">resolver</span>
+              <span style="width:1.5px; height:16px; background:#e97a52;"></span>
+              <div style="flex:1;"></div>
+              <span style="font-size:13px; color:#75726b;">✕</span>
+            </div>
+            <div style="display:flex; gap:6px; margin-top:10px;">
+              <span style="font-size:11px; padding:4px 10px; border-radius:20px; background:rgba(233,122,82,.13); color:#e97a52; font-weight:500;">Aa</span>
+              <span style="font-size:11px; padding:4px 10px; border-radius:20px; border:1px solid #2c3037; color:#75726b;">.*</span>
+              <span style="font-size:11px; padding:4px 10px; border-radius:20px; border:1px solid #2c3037; color:#75726b;">Whole word</span>
+            </div>
+          </div>
+          <div style="flex:1; overflow:hidden; padding:10px 10px;">
+            <div style="font-size:11px; color:#75726b; padding:4px 8px 8px;">7 results in 3 files</div>
+            <div style="display:flex; flex-direction:column; gap:4px;">
+              <div style="padding:10px 12px; border-radius:10px; background:rgba(233,122,82,.13);">
+                <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;"><span style="font-weight:500; color:#e9e7e2;">README.md</span><span style="font-family:'JetBrains Mono', monospace; color:#75726b;">L104</span></div>
+                <div style="font-family:'JetBrains Mono', monospace; font-size:11.5px; color:#9b988f; line-height:1.55;">Hosts that need to resolve relative paths can supply a <span style="color:#e97a52;">Resolver</span></div>
+              </div>
+              <div style="padding:10px 12px; border-radius:10px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;"><span style="font-weight:500; color:#e9e7e2;">README.md</span><span style="font-family:'JetBrains Mono', monospace; color:#75726b;">L118</span></div>
+                <div style="font-family:'JetBrains Mono', monospace; font-size:11.5px; color:#9b988f; line-height:1.55;">URLs a <span style="color:#e97a52;">Resolver</span> returns with ok=true are emitted as-is</div>
+              </div>
+              <div style="padding:10px 12px; border-radius:10px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;"><span style="font-weight:500; color:#e9e7e2;">docs/Design.md</span><span style="font-family:'JetBrains Mono', monospace; color:#75726b;">L52</span></div>
+                <div style="font-family:'JetBrains Mono', monospace; font-size:11.5px; color:#9b988f; line-height:1.55;">The <span style="color:#e97a52;">resolver</span> is the only host hook in the render path</div>
+              </div>
+              <div style="padding:10px 12px; border-radius:10px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;"><span style="font-weight:500; color:#e9e7e2;">SECURITY.md</span><span style="font-family:'JetBrains Mono', monospace; color:#75726b;">L31</span></div>
+                <div style="font-family:'JetBrains Mono', monospace; font-size:11.5px; color:#9b988f; line-height:1.55;">Bypasses of the <span style="color:#e97a52;">resolver</span> trust boundary are in scope</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}"></script>
+</body>
+</html>
