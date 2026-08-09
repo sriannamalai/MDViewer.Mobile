@@ -27,7 +27,35 @@
 
   <div style="display:flex; gap:44px; align-items:flex-start; flex-wrap:wrap;">
 
-    <div style="display:flex; flex-direction:column; gap:16px;">
+    <div id="screen-00" style="display:flex; flex-direction:column; gap:16px;">
+      <span style="font-size:12px; color:#75726b; font-family:'JetBrains Mono', monospace;">00 · Splash</span>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="390px,844px">
+        <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; overflow:hidden; background:linear-gradient(168deg, #33373f 0%, #1d1f25 42%, #131418 72%, #0f1013 100%); font-family:'IBM Plex Sans', system-ui, sans-serif;">
+          <div style="position:absolute; top:24%; width:380px; height:380px; border-radius:50%; background:radial-gradient(circle, rgba(226,113,74,.20) 0%, rgba(226,113,74,.07) 42%, rgba(226,113,74,0) 68%);"></div>
+          <svg viewBox="0 0 24 24" style="width:132px; height:132px; position:relative; filter:drop-shadow(0 10px 34px rgba(226,113,74,.22));">
+            <path d="M8.6 7.6 L5.6 12 L8.6 16.4" fill="none" stroke="#e2714a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity="0.22"></path>
+            <path d="M15.4 7.6 L18.4 12 L15.4 16.4" fill="none" stroke="#e2714a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity="0.22"></path>
+            <path d="M7.3 6.3 L3.8 12 L7.3 17.7" fill="none" stroke="#e2714a" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity="0.45"></path>
+            <path d="M16.7 6.3 L20.2 12 L16.7 17.7" fill="none" stroke="#e2714a" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity="0.45"></path>
+            <path d="M8.8 16 L8.8 8.8 L12 12.4 L15.2 8.8 L15.2 16" fill="none" stroke="url(#mdvSplashG)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>
+            <defs>
+              <linearGradient id="mdvSplashG" x1="8.8" y1="8.8" x2="15.2" y2="16" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#ffb27d"></stop>
+                <stop offset="100%" stop-color="#e2714a"></stop>
+              </linearGradient>
+            </defs>
+          </svg>
+          <div style="position:relative; margin-top:10px; font-size:26px; font-weight:600; letter-spacing:-.3px; color:#e9e7e2;">MarkDown<span style="color:#75726b; font-weight:500;">Viewer</span></div>
+          <div style="position:relative; margin-top:8px; font-size:12px; color:#9b988f;">Markdown, rendered beautifully — offline</div>
+          <div style="position:absolute; bottom:44px; display:flex; flex-direction:column; align-items:center; gap:14px;">
+            <div style="width:104px; height:3px; border-radius:2px; background:#23262b; overflow:hidden;"><div style="width:38%; height:100%; border-radius:2px; background:linear-gradient(90deg, #ffb27d, #e2714a);"></div></div>
+            <span style="font-family:'JetBrains Mono', monospace; font-size:10.5px; color:#75726b;">v0.1.0</span>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <div id="screen-01" style="display:flex; flex-direction:column; gap:16px;">
       <span style="font-size:12px; color:#75726b; font-family:'JetBrains Mono', monospace;">01 · Library</span>
       <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="390px,844px">
         <div style="height:100%; display:flex; flex-direction:column; background:#f7f6f3; font-family:'IBM Plex Sans', system-ui, sans-serif;">
@@ -92,7 +120,7 @@
       </x-import>
     </div>
 
-    <div style="display:flex; flex-direction:column; gap:16px;">
+    <div id="screen-02" style="display:flex; flex-direction:column; gap:16px;">
       <span style="font-size:12px; color:#75726b; font-family:'JetBrains Mono', monospace;">02 · Reader</span>
       <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="390px,844px">
         <div style="height:100%; display:flex; flex-direction:column; background:#f7f6f3; font-family:'IBM Plex Sans', system-ui, sans-serif; position:relative;">
@@ -142,7 +170,7 @@
       </x-import>
     </div>
 
-    <div style="display:flex; flex-direction:column; gap:16px;">
+    <div id="screen-03" style="display:flex; flex-direction:column; gap:16px;">
       <span style="font-size:12px; color:#75726b; font-family:'JetBrains Mono', monospace;">03 · Outline sheet</span>
       <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="390px,844px">
         <div style="height:100%; display:flex; flex-direction:column; background:#f7f6f3; font-family:'IBM Plex Sans', system-ui, sans-serif; position:relative;">
@@ -180,7 +208,7 @@
       </x-import>
     </div>
 
-    <div style="display:flex; flex-direction:column; gap:16px;">
+    <div id="screen-04" style="display:flex; flex-direction:column; gap:16px;">
       <span style="font-size:12px; color:#75726b; font-family:'JetBrains Mono', monospace;">04 · Search (dark)</span>
       <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" keyboard="{{ true }}" hint-size="390px,844px">
         <div style="height:100%; display:flex; flex-direction:column; background:#131418; font-family:'IBM Plex Sans', system-ui, sans-serif;">

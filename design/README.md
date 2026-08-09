@@ -1,7 +1,7 @@
 # Handoff: MDViewer Mobile UI — "MarkDownViewer"
 
 ## Overview
-The mobile companion to MDViewer.Desktop: a read-only Markdown viewer with the **same visual identity** (tokens, type, icon) rebuilt around phone ergonomics — bottom-anchored controls, one document at a time, sheets instead of side panels, 44px+ touch targets.
+The mobile companion to MDViewer.Desktop: five screens — splash, library, reader, outline sheet, search. A read-only Markdown viewer with the **same visual identity** (tokens, type, icon) rebuilt around phone ergonomics — bottom-anchored controls, one document at a time, sheets instead of side panels, 44px+ touch targets.
 
 ## About the design files
 `reference/MarkdownViewerMobile.dc.html` is a **design reference built in HTML** (open in a browser; keep `support.js` and `ios-frame.jsx` beside it — the iPhone bezel is presentation scaffolding, not part of the design). Recreate the four screens natively (SwiftUI / Jetpack Compose / Flutter — implementer's choice). Screens are designed at 402×874 (iPhone-class); all values are CSS px at 1×.
@@ -10,6 +10,12 @@ The mobile companion to MDViewer.Desktop: a read-only Markdown viewer with the *
 **High-fidelity.** Colors, typography and spacing are final, per `TOKENS.md` (shared with the desktop repo — single source of identity). Prose type is slightly larger than desktop for arm's-length reading: body 15px/1.68, H1 27px, H2 19px, code 12px. Status bar / home indicator / keyboard are OS-drawn; everything else below is the app.
 
 ## Screens
+
+### 00 · Splash
+- Full-screen gradient: `linear-gradient(168deg, #33373f 0%, #1d1f25 42%, #131418 72%, #0f1013 100%)` (icon-tile charcoal family). Soft coral radial glow centered behind the logo: `rgba(226,113,74,.20) → transparent @ 68%`, ~380px diameter.
+- Centered logo: bracket mark at 132px (same SVG as `assets/icon.svg`) with drop shadow `0 10px 34px rgba(226,113,74,.22)`; wordmark below 26px/600 — "MarkDown" `#e9e7e2`, "Viewer" `#75726b`/500; tagline 12px `text2` "Markdown, rendered beautifully — offline".
+- Bottom (44px above edge): 104×3 loading bar — track `line2`, fill `linear-gradient(90deg, #ffb27d, #e2714a)`, indeterminate sweep; version string mono 10.5px `text3` beneath.
+- Always dark regardless of theme; OS status bar light-content. Dismisses to Library when the vault index is ready.
 
 ### 01 · Library
 - **Header** (white `panel`, 1px `line` bottom border, sits under the OS status bar): 26px app icon tile (charcoal gradient, bracket mark) + wordmark 17px/600 ("MarkDown" `text`, "Viewer" `text3`/500), right 34px circular theme toggle (`panel2` fill).
@@ -52,8 +58,8 @@ See [`TOKENS.md`](TOKENS.md). Mobile deltas only: row height 44–48px · sheet 
 - Fonts: IBM Plex Sans, Source Serif 4, JetBrains Mono — bundle with the app, never network-load.
 
 ## Screenshots
-`screenshots/` — 2× captures: 01-library · 02-reader · 03-outline-sheet · 04-search-dark.
+`screenshots/` — 2× captures: 00-splash · 01-library · 02-reader · 03-outline-sheet · 04-search-dark.
 
 ## Files
-- `reference/MarkdownViewerMobile.dc.html` — the design source (all four screens)
+- `reference/MarkdownViewerMobile.dc.html` — the design source (all five screens)
 - `reference/support.js`, `reference/ios-frame.jsx` — prototype runtime + bezel scaffolding (not part of the design)
