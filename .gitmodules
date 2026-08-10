@@ -1,0 +1,3 @@
+[submodule "vendor/markdownviewer"]
+	path = vendor/markdownviewer
+	url = https://github.com/sriannamalai/markdownviewer.git
