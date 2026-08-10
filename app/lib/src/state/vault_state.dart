@@ -176,22 +176,49 @@ class VaultState extends ChangeNotifier {
   /// for files opened this way).
   VaultEntry openSingleFile({required String name, required Uint8List bytes}) {
     _openedFileProvider.setFile(name: name, bytes: bytes);
-    return VaultEntry(
+    final entry = VaultEntry(
       name: name,
       relPath: name,
       isDir: false,
       children: const [],
       source: VaultSource.openedFile,
     );
+    _openedFileEntry = entry;
+    return entry;
   }
 
+  /// The entry [openSingleFile] most recently registered, or null before
+  /// any "Open with" delivery this app run — [findByRelPath]'s only source
+  /// of truth for [VaultSource.openedFile] lookups (there is no flattened
+  /// index for it the way [_sampleFlat]/[_folderFlat] back the other two
+  /// sources, since it's never more than one file).
+  VaultEntry? _openedFileEntry;
+
   /// Looks up a previously-indexed entry by vault-relative path (used for
-  /// e.g. resolving an internal `.md` link to a Reader push). Returns null
-  /// if [source]'s tree hasn't been indexed yet or doesn't contain
-  /// [relPath].
+  /// e.g. resolving an internal `.md` link, or a Recent row, back to a
+  /// pushable [VaultEntry]). Returns null if [source]'s tree hasn't been
+  /// indexed yet (or, for [VaultSource.openedFile], no file has been
+  /// registered / a *different* file has since replaced it) or doesn't
+  /// contain [relPath].
+  ///
+  /// [VaultSource.openedFile] is handled explicitly rather than falling
+  /// into the folder-tree lookup: an open-with document was never indexed
+  /// into [_folderFlat] (or any tree at all — [openSingleFile] doesn't
+  /// touch [_entries]), so routing it there either misses forever (the
+  /// Library's Recent row for it would silently occupy a capped slot doing
+  /// nothing) or — worse — collides with an unrelated same-named file that
+  /// genuinely does live in the folder vault, resolving to the wrong
+  /// document on tap.
   VaultEntry? findByRelPath(VaultSource source, String relPath) {
-    final index = source == VaultSource.sample ? _sampleFlat : _folderFlat;
-    return index[relPath];
+    switch (source) {
+      case VaultSource.sample:
+        return _sampleFlat[relPath];
+      case VaultSource.folder:
+        return _folderFlat[relPath];
+      case VaultSource.openedFile:
+        final entry = _openedFileEntry;
+        return (entry != null && entry.relPath == relPath) ? entry : null;
+    }
   }
 
   /// Reads [entry]'s bytes and records the open in Recents (moved to the

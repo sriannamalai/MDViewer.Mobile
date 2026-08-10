@@ -364,4 +364,84 @@ void main() {
       await expectLater(state.readDoc(first), throwsA(anything));
     });
   });
+
+  group('VaultState.findByRelPath — openedFile', () {
+    test('resolves an openedFile recent back to the held file', () async {
+      final state = VaultState(
+        sampleProvider: FakeVaultProvider(),
+        folderProvider: FakeVaultProvider(),
+      );
+      await state.init();
+
+      final entry = state.openSingleFile(
+        name: 'Shared.md',
+        bytes: _bytes('# shared doc'),
+      );
+
+      final found = state.findByRelPath(VaultSource.openedFile, 'Shared.md');
+      expect(found, isNotNull);
+      expect(found!.relPath, entry.relPath);
+      expect(found.source, VaultSource.openedFile);
+    });
+
+    test(
+      'does NOT resolve to an unrelated same-named file in the folder vault',
+      () async {
+        // A folder vault that happens to contain a file with the exact
+        // same relPath as the currently-open single file — the bug this
+        // regresses against would have returned the folder's "Shared.md"
+        // (or, before that, silently missed forever) instead of correctly
+        // distinguishing the two by source.
+        final folder = FakeVaultProvider(
+          files: {'Shared.md': _bytes('unrelated folder document')},
+        );
+        SharedPreferences.setMockInitialValues({
+          'vault.grant': jsonEncode({'id': 'g1', 'displayName': 'My Docs'}),
+        });
+        final state = VaultState(
+          sampleProvider: FakeVaultProvider(),
+          folderProvider: folder,
+        );
+        await state.init();
+
+        state.openSingleFile(name: 'Shared.md', bytes: _bytes('opened doc'));
+
+        // The folder lookup still finds its own (different) document...
+        final folderMatch = state.findByRelPath(
+          VaultSource.folder,
+          'Shared.md',
+        );
+        expect(folderMatch, isNotNull);
+        // ...while the openedFile lookup returns the held file's bytes'
+        // source, never silently falling through to the folder tree.
+        final openedMatch = state.findByRelPath(
+          VaultSource.openedFile,
+          'Shared.md',
+        );
+        expect(openedMatch, isNotNull);
+        expect(openedMatch!.source, VaultSource.openedFile);
+
+        final openedBytes = await state.readDoc(openedMatch);
+        expect(utf8.decode(openedBytes), 'opened doc');
+      },
+    );
+
+    test(
+      'a vanished opened-file recent (nothing opened yet, or replaced since) drops gracefully',
+      () async {
+        final state = VaultState(
+          sampleProvider: FakeVaultProvider(),
+          folderProvider: FakeVaultProvider(),
+        );
+        await state.init();
+
+        // Nothing opened yet this app run.
+        expect(state.findByRelPath(VaultSource.openedFile, 'Old.md'), isNull);
+
+        // A different file has since replaced whatever "Old.md" was.
+        state.openSingleFile(name: 'New.md', bytes: _bytes('new'));
+        expect(state.findByRelPath(VaultSource.openedFile, 'Old.md'), isNull);
+      },
+    );
+  });
 }

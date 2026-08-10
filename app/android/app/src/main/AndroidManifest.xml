@@ -29,6 +29,13 @@
                  is mimeType matching — apps that correctly tag a shared/opened
                  .md file as text/markdown or text/x-markdown route here
                  directly, for both content:// and file:// sources. -->
+            <!-- No android:scheme here on purpose: leaving it unset matches
+                 both content:// and file://, which is what's wanted. Adding
+                 an explicit scheme to ONE <data> tag would narrow that whole
+                 <data> tag's match to just that scheme (Android intent-filter
+                 matching is per-attribute-type — an unset attribute means
+                 "match any", not "inherit the other filters' values"),
+                 silently breaking delivery from the other. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>

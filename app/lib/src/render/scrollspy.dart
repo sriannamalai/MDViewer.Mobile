@@ -149,6 +149,23 @@ const String _scrollSpyScript =
   window.addEventListener('scroll', onScroll, {passive: true});
   window.__mdvScrollToLine = function(line){
     var el = document.querySelector('[data-md-line="' + line + '"]');
+    if (!el) {
+      // data-md-line only marks each top-level block's *start* line
+      // (sourceMap:true's per-block annotation), not every source line —
+      // a search match on, say, a paragraph's third line has no element
+      // carrying that exact number. Fall back to the nearest PRECEDING
+      // marked block (the largest data-md-line <= the requested line):
+      // that's the block the match actually lives inside.
+      var marked = document.querySelectorAll('[data-md-line]');
+      var bestLine = -1;
+      for (var i = 0; i < marked.length; i++){
+        var candidateLine = parseInt(marked[i].getAttribute('data-md-line'), 10);
+        if (!isNaN(candidateLine) && candidateLine <= line && candidateLine > bestLine) {
+          bestLine = candidateLine;
+          el = marked[i];
+        }
+      }
+    }
     if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'});
   };
   window.__mdvScrollToProgress = function(p){

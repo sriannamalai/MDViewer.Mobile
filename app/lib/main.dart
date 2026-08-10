@@ -9,6 +9,7 @@ import 'src/state/app_state.dart';
 import 'src/state/vault_state.dart';
 import 'src/tokens.dart';
 import 'src/vault/open_with_channel.dart';
+import 'src/vault/open_with_delivery_queue.dart';
 
 void main() {
   runApp(const MDViewerApp());
@@ -27,7 +28,9 @@ void main() {
 /// [_consumeInitialOpenWithFile] handles the cold-start case (the app was
 /// launched *by* opening a file) the same way, just pulled once at startup
 /// instead of pushed. See `OpenWithChannel`'s doc comment for the native
-/// side's cold/warm handshake this depends on.
+/// side's cold/warm handshake this depends on, and
+/// [OpenWithDeliveryQueue]'s for why a not-yet-mounted [_navigatorKey] on
+/// cold start queues and retries rather than dropping the delivery.
 class MDViewerApp extends StatefulWidget {
   const MDViewerApp({super.key});
 
@@ -39,6 +42,7 @@ class _MDViewerAppState extends State<MDViewerApp> {
   final AppState _appState = AppState();
   final VaultState _vaultState = VaultState();
   final OpenWithChannel _openWith = OpenWithChannel();
+  final OpenWithDeliveryQueue _openWithQueue = OpenWithDeliveryQueue();
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
@@ -61,18 +65,38 @@ class _MDViewerAppState extends State<MDViewerApp> {
   Future<void> _consumeInitialOpenWithFile() async {
     final file = await _openWith.takeInitialFile();
     if (file == null) return;
-    await _routeOpenWithFile(file);
+    _routeOpenWithFile(file);
   }
 
-  /// Pushes the Reader for [file] via [_navigatorKey] — best-effort: if the
-  /// root [Navigator] isn't mounted yet (a cold "Open with" launch racing
-  /// the very first frame), the delivery is silently dropped rather than
-  /// queued for retry. In practice the platform-channel round trip alone
-  /// takes at least one event-loop turn, which is enough for `MaterialApp`
-  /// to have mounted; a device-level check that this never actually races
-  /// is Task 8's job, not something worth complicating this method for.
-  Future<void> _routeOpenWithFile(OpenWithFile file) async {
+  /// Queues [file] and attempts delivery via [_openWithQueue] — the root
+  /// [Navigator] not being mounted yet (a cold "Open with" launch racing
+  /// the very first frame) queues it for a bounded number of retries on
+  /// later frames instead of silently dropping it. Once the Navigator is
+  /// ready, [_pushOpenWithFile] does the actual push for every queued file.
+  void _routeOpenWithFile(OpenWithFile file) {
+    _openWithQueue.add(file);
+    _drainOpenWithQueue();
+  }
+
+  void _drainOpenWithQueue() {
+    _openWithQueue.drain(
+      isReady: () => _navigatorKey.currentState != null,
+      deliver: (file) => unawaited(_pushOpenWithFile(file)),
+      scheduleRetry: (retry) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => retry());
+        // Guarantees a next frame actually happens even if the app is
+        // otherwise fully idle (no animation, no pending setState) — an
+        // addPostFrameCallback registered with nothing else scheduling a
+        // frame could otherwise wait indefinitely for something unrelated
+        // to trigger one.
+        WidgetsBinding.instance.scheduleFrame();
+      },
+    );
+  }
+
+  Future<void> _pushOpenWithFile(OpenWithFile file) async {
     final navigator = _navigatorKey.currentState;
+    // isReady() just confirmed this; belt-and-suspenders.
     if (navigator == null) return;
 
     final entry = _vaultState.openSingleFile(

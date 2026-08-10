@@ -42,6 +42,25 @@ void main() {
       expect(out, contains('__mdvScrollToLine'));
       expect(out, contains('__mdvScrollToProgress'));
     });
+
+    test('__mdvScrollToLine falls back to the nearest preceding marked block '
+        'when there is no exact data-md-line match', () {
+      final out = injectScrollSpy('<html><body></body></html>');
+
+      // The exact-match attempt is still tried first...
+      expect(
+        out,
+        contains('document.querySelector(\'[data-md-line="\' + line + \'"]\')'),
+      );
+      // ...but falling through to null no longer just gives up: it scans
+      // every marked block for the largest data-md-line <= the requested
+      // line (data-md-line only marks each top-level block's *start*
+      // line, not every source line, so most non-heading search matches
+      // would otherwise silently no-op).
+      expect(out, contains("document.querySelectorAll('[data-md-line]')"));
+      expect(out, contains('candidateLine <= line'));
+      expect(out, contains('candidateLine > bestLine'));
+    });
   });
 
   group('ScrollSpyPayload.tryParse', () {

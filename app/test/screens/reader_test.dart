@@ -232,6 +232,81 @@ void main() {
     },
   );
 
+  testWidgets(
+    'initialLine scrolls to the given line once the page finishes loading',
+    (tester) async {
+      final entry = _sampleEntry();
+      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+      final appState = AppState();
+      await appState.init();
+      final renderer = _FakeDocRenderer();
+
+      await tester.pumpWidget(
+        _wrap(
+          vault,
+          appState,
+          ReaderScreen(entry: entry, renderer: renderer, initialLine: 7),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = platform.controllers.single;
+      expect(controller.executedScripts, isEmpty);
+
+      controller.navigationDelegate?.onPageFinished?.call('about:blank');
+      await tester.pump();
+
+      expect(
+        controller.executedScripts,
+        contains(contains('__mdvScrollToLine && window.__mdvScrollToLine(7)')),
+      );
+    },
+  );
+
+  testWidgets(
+    'initialLine takes priority over restoring a persisted scroll % — a '
+    'search-result jump must not be clobbered by a stale position',
+    (tester) async {
+      final entry = _sampleEntry();
+      SharedPreferences.setMockInitialValues({
+        // A persisted scroll position from a previous read — must NOT win
+        // over the search-result line this load was explicitly asked for.
+        'reader.scroll.sample:Welcome.md': 0.5,
+      });
+      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+      final appState = AppState();
+      await appState.init();
+      final renderer = _FakeDocRenderer();
+
+      await tester.pumpWidget(
+        _wrap(
+          vault,
+          appState,
+          ReaderScreen(entry: entry, renderer: renderer, initialLine: 3),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = platform.controllers.single;
+      controller.navigationDelegate?.onPageFinished?.call('about:blank');
+      await tester.pump();
+
+      expect(
+        controller.executedScripts,
+        contains(contains('__mdvScrollToLine && window.__mdvScrollToLine(3)')),
+      );
+      expect(
+        controller.executedScripts.any(
+          (s) => s.contains('__mdvScrollToProgress'),
+        ),
+        false,
+        reason:
+            'the persisted 0.5 restore must be skipped entirely once an '
+            'initialLine jump has fired for this load',
+      );
+    },
+  );
+
   testWidgets('scroll progress is persisted on every scrollspy update', (
     tester,
   ) async {
