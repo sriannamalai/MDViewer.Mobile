@@ -80,6 +80,13 @@ final class VaultChannel: NSObject {
   // MARK: - pickFolder
 
   private func pickFolder(result: @escaping FlutterResult) {
+    guard pendingPickCompletion == nil else {
+      // Mirrors the Android side: without this, a second concurrent call
+      // would overwrite pendingPickCompletion, orphaning the first call's
+      // FlutterResult — its Dart Future would simply never complete.
+      result(FlutterError(code: "busy", message: "a pickFolder() call is already in progress", details: nil))
+      return
+    }
     guard let rootViewController = Self.rootViewController() else {
       result(FlutterError(code: "no_root_vc", message: "no root view controller to present the picker from", details: nil))
       return
@@ -182,7 +189,16 @@ final class VaultChannel: NSObject {
     // rejects any relPath that would walk above the vault root before it
     // ever reaches here, but refuse to serve anything outside the picked
     // root regardless of how the path arrived.
-    guard target.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path) else { return nil }
+    //
+    // A plain hasPrefix(root.path) is the classic sibling-directory flaw:
+    // "/Users/x/VaultRoot-evil" has "/Users/x/VaultRoot" as a raw string
+    // prefix without being inside it. Comparing against the root path with
+    // a trailing separator closes that, while still accepting the target
+    // legitimately BEING the root itself (relPath == "").
+    let targetPath = target.standardizedFileURL.path
+    let rootPath = root.standardizedFileURL.path
+    let rootPathWithSeparator = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+    guard targetPath == rootPath || targetPath.hasPrefix(rootPathWithSeparator) else { return nil }
     guard let data = try? Data(contentsOf: target) else { return nil }
     return FlutterStandardTypedData(bytes: data)
   }
