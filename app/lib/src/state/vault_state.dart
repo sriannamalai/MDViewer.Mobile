@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../vault/opened_file_vault_provider.dart';
 import '../vault/platform_vault_provider.dart';
 import '../vault/recent_entry.dart';
 import '../vault/recents_store.dart';
@@ -28,15 +29,20 @@ import '../vault/vault_source.dart';
 /// separate sections (design/README.md §01: vault label = folder name,
 /// SAMPLES section, RECENT section).
 class VaultState extends ChangeNotifier {
-  VaultState({VaultProvider? sampleProvider, VaultProvider? folderProvider})
-    : _sampleProvider = sampleProvider ?? const SampleVaultProvider(),
-      _folderProvider = folderProvider ?? PlatformVaultProvider();
+  VaultState({
+    VaultProvider? sampleProvider,
+    VaultProvider? folderProvider,
+    OpenedFileVaultProvider? openedFileProvider,
+  }) : _sampleProvider = sampleProvider ?? const SampleVaultProvider(),
+       _folderProvider = folderProvider ?? PlatformVaultProvider(),
+       _openedFileProvider = openedFileProvider ?? OpenedFileVaultProvider();
 
   static const _recentsKey = 'vault.recents';
   static const _grantKey = 'vault.grant';
 
   final VaultProvider _sampleProvider;
   final VaultProvider _folderProvider;
+  final OpenedFileVaultProvider _openedFileProvider;
 
   bool _ready = false;
   bool get ready => _ready;
@@ -146,20 +152,37 @@ class VaultState extends ChangeNotifier {
     return out;
   }
 
-  /// [VaultSource.openedFile] is a data-model placeholder for the "Open
-  /// with" single-file flow — its read path is wired up in the search /
-  /// open-with task. Routing it through the folder provider here is a
-  /// harmless default: it's only exercised once that task registers the
-  /// open-with intent/URL handlers and starts producing `openedFile`
-  /// entries.
   VaultProvider _providerFor(VaultSource source) {
     switch (source) {
       case VaultSource.sample:
         return _sampleProvider;
       case VaultSource.folder:
-      case VaultSource.openedFile:
         return _folderProvider;
+      case VaultSource.openedFile:
+        return _openedFileProvider;
     }
+  }
+
+  /// Registers a single OS "Open with MDViewer" file (design/README.md's
+  /// open-with note; `vault/open_with_channel.dart`) as a
+  /// [VaultSource.openedFile] entry and returns it, ready to push to the
+  /// Reader. Replaces any previously opened single file — v1 holds at most
+  /// one at a time, matching the desktop/folder vaults' own "one grant"
+  /// rule.
+  ///
+  /// No folder grant backs this entry, so [resolveRelative] always
+  /// declines for it — [OpenedFileVaultProvider]'s doc comment covers why
+  /// (the documented v1 limitation: relative images/links don't resolve
+  /// for files opened this way).
+  VaultEntry openSingleFile({required String name, required Uint8List bytes}) {
+    _openedFileProvider.setFile(name: name, bytes: bytes);
+    return VaultEntry(
+      name: name,
+      relPath: name,
+      isDir: false,
+      children: const [],
+      source: VaultSource.openedFile,
+    );
   }
 
   /// Looks up a previously-indexed entry by vault-relative path (used for
@@ -190,6 +213,14 @@ class VaultState extends ChangeNotifier {
 
     return bytes;
   }
+
+  /// Reads [entry]'s bytes *without* touching Recents — the search
+  /// engine's read hook (`vault/search.dart`'s `VaultSearch.search`).
+  /// Scanning a file while searching isn't "opening" it, so it must not
+  /// show up in the Library's Recent section the way [readDoc] deliberately
+  /// does for an actual Reader open.
+  Future<Uint8List> readRaw(VaultEntry entry) =>
+      _providerFor(entry.source).read(entry);
 
   /// Resolves an authored relative link/image target ([relPath], e.g.
   /// `img/logo.png`) against [from]'s directory and reads its bytes — the

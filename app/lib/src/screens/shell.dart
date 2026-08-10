@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../tokens.dart';
 import '../widgets/tab_bar.dart';
 import 'library.dart';
+import 'search.dart';
 import 'settings.dart';
 
 /// The app shell: three tab roots (Library, Search, Settings) behind
@@ -24,6 +25,18 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   AppTab _current = AppTab.library;
 
+  /// Bumped only by [_openSearchFromLibrary] (never by a plain tab-bar tap
+  /// on Search) and used as [SearchScreen]'s `key` — the mechanism behind
+  /// "the query field autofocuses when arriving via the Library search
+  /// field's tap, but not on every manual visit to the Search tab" (task-7
+  /// brief). Changing a widget's key forces Flutter to discard its old
+  /// [State] and build a fresh one (fresh empty query, `autofocus: true`)
+  /// even though it stays at the same [IndexedStack] index; a plain
+  /// tab-bar switch leaves the key alone, so [SearchScreen]'s existing
+  /// state (typed query, results, filters) survives exactly like every
+  /// other tab's does.
+  int _searchAutofocusToken = 0;
+
   @override
   Widget build(BuildContext context) {
     final tokens = AppTokens.of(context);
@@ -33,8 +46,11 @@ class _AppShellState extends State<AppShell> {
       body: IndexedStack(
         index: _current.index,
         children: [
-          LibraryScreen(onOpenSearch: () => _switchTo(AppTab.search)),
-          const _SearchPlaceholder(),
+          LibraryScreen(onOpenSearch: _openSearchFromLibrary),
+          SearchScreen(
+            key: ValueKey(_searchAutofocusToken),
+            autofocus: _searchAutofocusToken > 0,
+          ),
           const SettingsScreen(),
         ],
       ),
@@ -43,54 +59,11 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _switchTo(AppTab tab) => setState(() => _current = tab);
-}
 
-/// Stand-in for the Search root — Task 7 replaces this with the real query/
-/// filters/results screen (design/README.md §04).
-class _SearchPlaceholder extends StatelessWidget {
-  const _SearchPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const _TabPlaceholder(title: 'Search', note: 'Lands in Task 7.');
-  }
-}
-
-class _TabPlaceholder extends StatelessWidget {
-  const _TabPlaceholder({required this.title, required this.note});
-
-  final String title;
-  final String note;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = AppTokens.of(context);
-    return SafeArea(
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontFamily: AppFonts.sourceSerif4,
-                fontSize: AppTypeScale.h2Size,
-                fontWeight: AppTypeScale.h2Weight,
-                color: tokens.text,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              note,
-              style: TextStyle(
-                fontFamily: AppFonts.ibmPlexSans,
-                fontSize: AppTypeScale.uiTextSize,
-                color: tokens.text3,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  void _openSearchFromLibrary() {
+    setState(() {
+      _searchAutofocusToken++;
+      _current = AppTab.search;
+    });
   }
 }

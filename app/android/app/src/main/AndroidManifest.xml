@@ -24,6 +24,58 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!-- Open-with registration (task-7-brief.md): the reliable path
+                 is mimeType matching — apps that correctly tag a shared/opened
+                 .md file as text/markdown or text/x-markdown route here
+                 directly, for both content:// and file:// sources. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:mimeType="text/markdown"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:mimeType="text/x-markdown"/>
+            </intent-filter>
+
+            <!-- Best-effort fallback for sources that tag .md files as
+                 generic text/plain instead: restricted by a pathPattern so
+                 this app doesn't become a handler for every plain-text file.
+                 Android's pathPattern isn't real regex — `.` matches any
+                 single character (not a literal dot) and `*` repeats the
+                 immediately preceding atom, so `.*\\.md` ("any chars, any
+                 chars, literal-dot, m, d") is the standard idiom for "ends
+                 with .md", not a regex `.*\.md`. This is also a real
+                 limitation, not just unfamiliar syntax: many content://
+                 URIs (cloud-storage providers especially) expose an opaque
+                 document ID as their "path", not a real file path the
+                 pattern can match against, so this filter mostly helps
+                 file://-scheme opens and providers that do preserve real
+                 paths — mimeType matching above is the dependable path. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:scheme="content"
+                    android:host="*"
+                    android:mimeType="text/plain"
+                    android:pathPattern=".*\\.md"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:scheme="file"
+                    android:host="*"
+                    android:mimeType="text/plain"
+                    android:pathPattern=".*\\.md"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

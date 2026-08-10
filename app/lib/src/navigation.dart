@@ -12,8 +12,19 @@ import 'vault/vault_entry.dart';
 /// Task 4 (Library rows) and Task 7 (Search results) call this rather than
 /// building their own `Navigator.push`, so the destination — a
 /// [ReaderScreen] as of Task 5 — only needs to change in one place.
-Future<void> pushReader(BuildContext context, VaultEntry entry) {
+///
+/// [initialLine] (Task 7's Search results, and the open-with flow) scrolls
+/// the Reader to that source line right after its first page load — see
+/// [ReaderScreen.initialLine]'s doc comment.
+Future<void> pushReader(
+  BuildContext context,
+  VaultEntry entry, {
+  int? initialLine,
+}) {
   return Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (context) => ReaderScreen(entry: entry)),
+    MaterialPageRoute<void>(
+      builder: (context) =>
+          ReaderScreen(entry: entry, initialLine: initialLine),
+    ),
   );
 }

@@ -126,6 +126,29 @@ class AppTypeScale {
   static const FontWeight outlineRowH1Weight = FontWeight.w500;
   static const FontWeight outlineRowInactiveWeight = FontWeight.w400;
   static const FontWeight outlineRowActiveWeight = FontWeight.w600;
+
+  // §04 Search — transcribed from design/README.md §04 ("mono query text +
+  // accent caret, ✕ clear"; "filter chips ... 20px-radius pills"; "count
+  // line 11px text3"; "cards ... filename 12px/500 + L<line> mono right;
+  // snippet mono 11.5px text2 with match substring in accent") and confirmed
+  // against the HTML reference's screen-04 markup: the query row's `⌕`/text/
+  // `✕` all share `font-size:14px` (bumped the magnifier from Library's 14px
+  // — same value, kept a distinct name since it's a different screen's
+  // token per the file's own precedent); chips `font-size:11px;
+  // padding:4px 10px`; the count line `font-size:11px`; a result card's
+  // filename row `font-size:12px` (both the filename span and the `L<line>`
+  // span — the HTML never overrides size on the second span, so they share
+  // one token); the snippet div `font-size:11.5px; line-height:1.55`.
+  static const double searchQueryTextSize = 14;
+  static const double searchIconSize = 14;
+  static const double searchClearGlyphSize = 13;
+  static const double searchChipTextSize = 11;
+  static const FontWeight searchChipActiveWeight = FontWeight.w500;
+  static const double searchCountLineSize = 11;
+  static const double searchCardMetaSize = 12; // filename + "L<line>"
+  static const FontWeight searchCardFilenameWeight = FontWeight.w500;
+  static const double searchSnippetSize = 11.5;
+  static const double searchSnippetLineHeight = 1.55; // multiplier
 }
 
 /// Spacing & geometry constants from TOKENS.md's "Spacing & geometry"
@@ -214,6 +237,20 @@ class AppGeometry {
   // (TOKENS.md's only spring-shaped easing curve) rather than inventing a
   // second one; only the duration is outline-specific.
   static const Duration outlineSheetDuration = Duration(milliseconds: 300);
+
+  // §04 Search — transcribed from the HTML reference's screen-04 markup:
+  // chip pills reuse [pillRadius] (also 20 there, same precedent as
+  // [radiusOutlineRow] reusing [radiusLibraryRow]'s value under a
+  // screen-specific name); chip padding `4px 10px`; the chips row's own gap
+  // `6px`; a result card's radius `10px` and padding `10px 12px`; the gap
+  // between cards `4px` (the results column's `gap:4px`).
+  static const double searchChipPaddingH = 10;
+  static const double searchChipPaddingV = 4;
+  static const double searchChipGap = 6;
+  static const double radiusSearchCard = 10;
+  static const double searchCardPaddingH = 12;
+  static const double searchCardPaddingV = 10;
+  static const double searchCardGap = 4;
 }
 
 /// Non-themed overlay colors — identical across light/dark (unlike

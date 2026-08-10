@@ -286,4 +286,82 @@ void main() {
       },
     );
   });
+
+  group('VaultState.readRaw', () {
+    test('reads bytes without touching Recents', () async {
+      final sample = FakeVaultProvider(files: {'Welcome.md': _bytes('# hi')});
+      final state = VaultState(
+        sampleProvider: sample,
+        folderProvider: FakeVaultProvider(),
+      );
+      await state.init();
+
+      final entry = state.sampleEntries.firstWhere(
+        (e) => e.name == 'Welcome.md',
+      );
+      final bytes = await state.readRaw(entry);
+
+      expect(utf8.decode(bytes), '# hi');
+      expect(state.recents, isEmpty);
+    });
+  });
+
+  group('VaultState.openSingleFile — open-with', () {
+    test('registers an openedFile entry that readDoc can then read', () async {
+      final state = VaultState(
+        sampleProvider: FakeVaultProvider(),
+        folderProvider: FakeVaultProvider(),
+      );
+      await state.init();
+
+      final entry = state.openSingleFile(
+        name: 'Shared.md',
+        bytes: _bytes('# shared doc'),
+      );
+
+      expect(entry.source, VaultSource.openedFile);
+      expect(entry.relPath, 'Shared.md');
+      expect(entry.isDir, false);
+
+      final bytes = await state.readDoc(entry);
+      expect(utf8.decode(bytes), '# shared doc');
+      // readDoc's usual Recents recording still applies to an opened file.
+      expect(state.recents.single.relPath, 'Shared.md');
+      expect(state.recents.single.source, VaultSource.openedFile);
+    });
+
+    test(
+      'resolveRelative always declines for an opened file — no folder behind it',
+      () async {
+        final state = VaultState(
+          sampleProvider: FakeVaultProvider(),
+          folderProvider: FakeVaultProvider(),
+        );
+        await state.init();
+
+        final entry = state.openSingleFile(
+          name: 'Shared.md',
+          bytes: _bytes('![x](img/logo.png)'),
+        );
+
+        await expectLater(
+          state.resolveRelative(entry, 'img/logo.png'),
+          completion(null),
+        );
+      },
+    );
+
+    test('opening a second file replaces the first', () async {
+      final state = VaultState(
+        sampleProvider: FakeVaultProvider(),
+        folderProvider: FakeVaultProvider(),
+      );
+      await state.init();
+
+      final first = state.openSingleFile(name: 'One.md', bytes: _bytes('1'));
+      state.openSingleFile(name: 'Two.md', bytes: _bytes('2'));
+
+      await expectLater(state.readDoc(first), throwsA(anything));
+    });
+  });
 }

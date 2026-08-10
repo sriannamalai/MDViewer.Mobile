@@ -39,9 +39,27 @@ import 'outline_sheet.dart';
 /// scroll position) whenever the effective theme or text-scale step
 /// changes.
 class ReaderScreen extends StatefulWidget {
-  const ReaderScreen({super.key, required this.entry, this.renderer});
+  const ReaderScreen({
+    super.key,
+    required this.entry,
+    this.renderer,
+    this.initialLine,
+  });
 
   final VaultEntry entry;
+
+  /// A source line (`[data-md-line="…"]`) to scroll to right after the
+  /// first page load — the Search screen's "tap a result → Reader, jumped
+  /// to the match" behavior (design/README.md §04) and the Outline sheet's
+  /// analogous in-Reader jump both ultimately run the same
+  /// `__mdvScrollToLine` script (`scrollspy.dart`), but this one fires
+  /// automatically on load rather than from a user tap once already
+  /// reading. Takes priority over restoring a persisted scroll position
+  /// (`_prefsKey`) for this same single load — a search result should land
+  /// on the match, not wherever the reader was last left off. Null (the
+  /// Library/open-with/Outline-internal-link paths) falls back to that
+  /// persisted-progress restore exactly as before this field existed.
+  final int? initialLine;
 
   /// Overridable for tests: `Mdviewer.instance` only resolves its native
   /// library on a real device/simulator/emulator (see
@@ -79,6 +97,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
   ReaderDocState? _docState;
 
   double? _pendingRestoreProgress;
+
+  /// Set from [ReaderScreen.initialLine] in [initState] and consumed
+  /// (cleared) the first time [_handlePageFinished] fires — a later
+  /// re-render (theme/text-scale change) must NOT re-jump to the original
+  /// search match, so this is a one-shot, unlike [_pendingRestoreProgress]
+  /// (which [build]'s rerender branch deliberately re-arms every time).
+  int? _pendingInitialLine;
   bool _rerendering = false;
   double _renderedScale = AppState.defaultTextScale;
   Brightness? _renderedBrightness;
@@ -89,6 +114,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   @override
   void initState() {
     super.initState();
+    _pendingInitialLine = widget.initialLine;
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0x00000000))
@@ -180,6 +206,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _handlePageFinished(String url) {
+    final line = _pendingInitialLine;
+    if (line != null) {
+      _pendingInitialLine = null;
+      // A search-result jump wins over restoring the persisted scroll
+      // position for this load — see ReaderScreen.initialLine's doc
+      // comment. Drop any pending restore too, so a later re-render
+      // doesn't undo the jump by restoring the *old* progress instead of
+      // whatever scrollspy reports once the jump lands.
+      _pendingRestoreProgress = null;
+      unawaited(_controller.runJavaScript(scrollToLineScript(line)));
+      return;
+    }
+
     final restore = _pendingRestoreProgress;
     if (restore != null) {
       _pendingRestoreProgress = null;
