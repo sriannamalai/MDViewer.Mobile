@@ -201,6 +201,14 @@ class AppGeometry {
   static const double outlineGrabberRadius = 2;
   static const double outlineGrabberBottomMargin = 12;
 
+  // The outline sheet's drop shadow — design/README.md §03: "shadow
+  // `0 -12px 40px rgba(0,0,0,.18)`" (CSS box-shadow order: x-offset,
+  // y-offset, blur-radius; color lives in [AppOverlay.outlineSheetShadow]
+  // since it's a `Color(...)` literal). Flutter's [Offset] uses the same
+  // sign convention as CSS — negative `dy` shifts the shadow upward.
+  static const double outlineSheetShadowOffsetY = -12;
+  static const double outlineSheetShadowBlurRadius = 40;
+
   // The outline sheet's entrance animation — design/README.md §Interactions
   // ("Outline opens the sheet (spring, ~0.3s)"). Reuses [motionPanelCurve]
   // (TOKENS.md's only spring-shaped easing curve) rather than inventing a
@@ -218,6 +226,11 @@ class AppOverlay {
   AppOverlay._();
 
   static const Color outlineVeil = Color(0x470A0B0C); // rgba(10,11,12,.28)
+
+  /// The Outline sheet's drop shadow — design/README.md §03: "shadow
+  /// `0 -12px 40px rgba(0,0,0,.18)`". Paired with
+  /// [AppGeometry.outlineSheetShadowOffsetY]/[outlineSheetShadowBlurRadius].
+  static const Color outlineSheetShadow = Color(0x2E000000); // rgba(0,0,0,.18)
 }
 
 /// Color tokens for one theme (light or dark), transcribed 1:1 from

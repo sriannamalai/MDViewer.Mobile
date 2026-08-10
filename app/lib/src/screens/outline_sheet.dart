@@ -14,10 +14,14 @@ import '../util/thousands.dart';
 /// (`showModalBottomSheet`'s veil/shape/motion) design/README.md §03 and
 /// §Interactions specify: veil `rgba(10,11,12,.28)`
 /// ([AppOverlay.outlineVeil]), sheet radius 18 top corners
-/// ([AppGeometry.sheetRadius]), ~300ms spring-ish entrance
-/// ([AppGeometry.outlineSheetDuration] + [AppGeometry.motionPanelCurve]),
-/// and native drag-to-dismiss/veil-tap-dismiss (`showModalBottomSheet`'s
-/// `enableDrag`/`isDismissible` defaults — no custom gesture code needed).
+/// ([AppGeometry.sheetRadius]), drop shadow `0 -12px 40px rgba(0,0,0,.18)`
+/// ([AppOverlay.outlineSheetShadow] painted on an outer [DecoratedBox] that
+/// wraps the content-clipping [ClipRRect] from the *outside*, so the
+/// shadow isn't clipped away with the rest of the sheet's corners), ~300ms
+/// spring-ish entrance ([AppGeometry.outlineSheetDuration] +
+/// [AppGeometry.motionPanelCurve]), and native drag-to-dismiss/veil-tap-
+/// dismiss (`showModalBottomSheet`'s `enableDrag`/`isDismissible`
+/// defaults — no custom gesture code needed).
 ///
 /// Subscribes to [docState] directly (a [ListenableBuilder], not a
 /// snapshot of `docState.activeHeading` taken once at open time) so the
@@ -73,14 +77,30 @@ class OutlineSheet extends StatelessWidget {
     final bottomInset = MediaQuery.of(context).padding.bottom;
     final maxHeight = MediaQuery.of(context).size.height * _maxHeightFraction;
 
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(AppGeometry.sheetRadius),
+    const sheetRadius = BorderRadius.vertical(
+      top: Radius.circular(AppGeometry.sheetRadius),
+    );
+
+    // The panel color + shadow live on this *outer* DecoratedBox, wrapping
+    // the ClipRRect from the outside — a shadow painted *inside* a clipped
+    // widget is invisible (the clip cuts it off along with everything else
+    // outside the shape), so the shadow has to be the outermost layer.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tokens.panel,
+        borderRadius: sheetRadius,
+        boxShadow: [
+          BoxShadow(
+            color: AppOverlay.outlineSheetShadow,
+            offset: const Offset(0, AppGeometry.outlineSheetShadowOffsetY),
+            blurRadius: AppGeometry.outlineSheetShadowBlurRadius,
+          ),
+        ],
       ),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        child: DecoratedBox(
-          decoration: BoxDecoration(color: tokens.panel),
+      child: ClipRRect(
+        borderRadius: sheetRadius,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
           child: Padding(
             padding: EdgeInsets.only(
               top: AppGeometry.sheetTopPadding,
@@ -301,11 +321,16 @@ class _OutlineRow extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
 
+  /// Not a design token (no §03 spec covers this state) — named for the
+  /// same reason [OutlineSheet._maxHeightFraction] is: an implementation
+  /// choice, kept out of line as a magic number regardless.
+  static const double _verticalPadding = 32;
+
   @override
   Widget build(BuildContext context) {
     final tokens = AppTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 32),
+      padding: const EdgeInsets.symmetric(vertical: _verticalPadding),
       child: Center(
         child: Text(
           'No headings',

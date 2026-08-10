@@ -56,6 +56,20 @@ Future<void> _open(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// The row's own `Material` fill color (design/README.md §03: "active
+/// section `accentSoft` fill") — the nearest `Material` ancestor of the
+/// row's text, i.e. `_OutlineRow`'s own `Material`, not some outer one
+/// (`find.ancestor` walks outward from the text, so `.first` is nearest).
+Color? _rowFillColor(WidgetTester tester, String text) {
+  return tester
+      .widget<Material>(
+        find
+            .ancestor(of: find.text(text), matching: find.byType(Material))
+            .first,
+      )
+      .color;
+}
+
 void main() {
   testWidgets('renders one row per outline entry, in document order', (
     tester,
@@ -97,6 +111,37 @@ void main() {
     expect(beyondH3X, h3X);
   });
 
+  testWidgets("the sheet panel is painted on an outer decoration carrying the "
+      "design's drop shadow (not clipped away by the content ClipRRect)", (
+    tester,
+  ) async {
+    final docState = ReaderDocState(model: _fixtureModel);
+
+    await tester.pumpWidget(_harness(docState: docState, onTapHeading: (_) {}));
+    await _open(tester);
+
+    final panel = tester
+        .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+        .map((box) => box.decoration)
+        .whereType<BoxDecoration>()
+        .firstWhere((decoration) => decoration.boxShadow != null);
+
+    expect(panel.color, AppTokens.light.panel);
+    expect(
+      panel.borderRadius,
+      const BorderRadius.vertical(
+        top: Radius.circular(AppGeometry.sheetRadius),
+      ),
+    );
+    final shadow = panel.boxShadow!.single;
+    expect(shadow.color, AppOverlay.outlineSheetShadow);
+    expect(
+      shadow.offset,
+      const Offset(0, AppGeometry.outlineSheetShadowOffsetY),
+    );
+    expect(shadow.blurRadius, AppGeometry.outlineSheetShadowBlurRadius);
+  });
+
   testWidgets('header shows the word count grouped + read minutes', (
     tester,
   ) async {
@@ -125,9 +170,11 @@ void main() {
       final activeStyle = tester.widget<Text>(find.text('Features')).style!;
       expect(activeStyle.color, AppTokens.light.accent);
       expect(activeStyle.fontWeight, AppTypeScale.outlineRowActiveWeight);
+      expect(_rowFillColor(tester, 'Features'), AppTokens.light.accentSoft);
 
       final inactiveStyle = tester.widget<Text>(find.text('Status')).style!;
       expect(inactiveStyle.color, isNot(AppTokens.light.accent));
+      expect(_rowFillColor(tester, 'Status'), Colors.transparent);
     },
   );
 
