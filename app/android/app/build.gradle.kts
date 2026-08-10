@@ -40,6 +40,12 @@ kotlin {
     }
 }
 
+dependencies {
+    // DocumentFile — the SAF tree-walking API VaultChannel.kt uses to list
+    // and read a user-picked folder (ACTION_OPEN_DOCUMENT_TREE).
+    implementation("androidx.documentfile:documentfile:1.0.1")
+}
+
 flutter {
     source = "../.."
 }

@@ -66,6 +66,15 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # Bundled sample vault (lib/src/vault/sample_vault_provider.dart) — a
+  # per-directory listing since Flutter's `assets:` entries aren't
+  # recursive. Keep this in sync with SampleVaultProvider.mdRelPaths and
+  # the actual files on disk.
+  assets:
+    - assets/samples/
+    - assets/samples/Notes/
+    - assets/samples/img/
+
   # Bundled fonts — see assets/fonts/README.md for source/version/license
   # per file. Never network-load fonts (design/README.md §Assets).
   fonts:
