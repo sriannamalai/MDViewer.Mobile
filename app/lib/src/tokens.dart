@@ -88,6 +88,25 @@ class AppTypeScale {
   static const double libraryWordmarkSize = 17;
   static const FontWeight libraryWordmarkWeight = FontWeight.w600;
   static const double libraryWordmarkLetterSpacing = -0.2;
+
+  // §02 Reader — header/bottom-bar sizes not covered by any desktop-shared
+  // token. Transcribed from design/README.md §02 ("filename 14px/600 ...
+  // 40px circular 'Aa'") and confirmed against the HTML reference's
+  // screen-02 markup (`font-size:20px` on the back-button glyph,
+  // `font-size:15px` on the share glyph, `font-size:13px; font-weight:500`
+  // on the Outline pill's glyph+label, `font-size:11px` on the "section ·
+  // %" line, `font-size:14px` on the Aa glyph). The header's "vault · read
+  // time" mono line reuses the desktop-shared `uiMetaSizeMin` (10.5px) —
+  // README explicitly calls it "mono 10.5px text3", the same value.
+  static const double readerBackGlyphSize = 20;
+  static const double readerShareGlyphSize = 15;
+  static const double readerFilenameSize = 14;
+  static const FontWeight readerFilenameWeight = FontWeight.w600;
+  static const double readerOutlineGlyphSize = 13;
+  static const double readerOutlineTextSize = 13;
+  static const FontWeight readerOutlineTextWeight = FontWeight.w500;
+  static const double readerSectionSize = 11;
+  static const double readerAaGlyphSize = 14;
 }
 
 /// Spacing & geometry constants from TOKENS.md's "Spacing & geometry"

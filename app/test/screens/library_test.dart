@@ -19,6 +19,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
+
+import '../support/fake_webview_platform.dart';
 
 Uint8List _bytes(String s) => Uint8List.fromList(utf8.encode(s));
 
@@ -75,6 +78,11 @@ Widget _wrap(VaultState vault, {VoidCallback? onOpenSearch}) {
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    // navigation.dart's pushReader now routes to the real ReaderScreen
+    // (Task 5), which constructs a WebViewController — needs a registered
+    // platform even though this suite never exercises webview behavior
+    // itself. See fake_webview_platform.dart's doc comment.
+    WebViewPlatform.instance = FakeWebViewPlatform();
   });
 
   group('vault tree', () {
@@ -227,9 +235,15 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(vault.recents.single.relPath, 'Welcome.md');
-      // navigation.dart's pushReader placeholder — confirms the tap
-      // actually navigated, not just updated state.
-      expect(find.textContaining('lands in Task 5'), findsOneWidget);
+      // pushReader (navigation.dart) routes to the real ReaderScreen (Task
+      // 5) — confirms the tap actually navigated, not just updated state.
+      // The Reader's own render call fails here (no FFI library reachable
+      // under `flutter test` — see renderer.dart's doc comment), which
+      // ReaderScreen surfaces as its error state rather than crashing; the
+      // header (filename) still renders regardless, which is what this
+      // test cares about.
+      expect(tester.takeException(), isNull);
+      expect(find.text('Welcome.md'), findsOneWidget);
     });
   });
 

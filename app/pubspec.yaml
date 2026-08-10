@@ -40,12 +40,19 @@ dependencies:
   share_plus: ^13.3.0
   path: ^1.9.1
   file_picker: ^12.0.0-beta.7
+  url_launcher: ^6.3.2
+  path_provider: ^2.1.6
   mdviewer:
     path: ../vendor/markdownviewer/flutter/mdviewer
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  # Used by test/support/fake_webview_platform.dart to register a
+  # WebViewPlatform.instance for `flutter test` (no real device webview
+  # exists there) — see that file's doc comment.
+  webview_flutter_platform_interface: ^2.15.1
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
