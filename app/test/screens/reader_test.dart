@@ -310,7 +310,7 @@ void main() {
   );
 
   testWidgets(
-    'the Outline pill is present and tappable (Task 6 wires the sheet)',
+    'the Outline pill opens the Outline sheet, wired to __mdvScrollToLine',
     (tester) async {
       final entry = _sampleEntry();
       final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
@@ -324,8 +324,25 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Outline'));
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
+
+      // The fixture's heading "Hello" + paragraph "one two three" is 4
+      // words total (DocModel.analyze counts every text node, headings
+      // included); the sheet's header shows that alongside the 1 words · 1
+      // min floor.
+      expect(find.text('4 words · 1 min'), findsOneWidget);
+
+      await tester.tap(find.text('Hello').last);
+      await tester.pumpAndSettle();
+
+      final controller = platform.controllers.single;
+      expect(
+        controller.executedScripts,
+        contains(contains('__mdvScrollToLine(1)')),
+      );
+      // Tap dismisses: the sheet's word-count header is gone again.
+      expect(find.text('4 words · 1 min'), findsNothing);
     },
   );
 }

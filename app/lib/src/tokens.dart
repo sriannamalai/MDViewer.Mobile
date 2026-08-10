@@ -107,6 +107,25 @@ class AppTypeScale {
   static const FontWeight readerOutlineTextWeight = FontWeight.w500;
   static const double readerSectionSize = 11;
   static const double readerAaGlyphSize = 14;
+
+  // §03 Outline sheet — transcribed from design/README.md §03 ("header row
+  // — uppercase 'On this page' label left, '1,140 words · 5 min' mono 11px
+  // text3 right"; "Outline rows: 44px, radius 10, 15px text; H1 500 text2,
+  // H2 indent 28px, H3 indent 42px text3") and confirmed against the HTML
+  // reference's screen-03 markup (`font-size:11px; font-weight:600;
+  // letter-spacing:.09em` on the label, `font-size:11px` mono on the meta,
+  // `font-size:15px` on every row, no explicit `font-weight` on inactive H2/
+  // H3 rows (browser default 400), `font-weight:600` on the active row).
+  static const double outlineHeaderLabelSize = 11;
+  static const FontWeight outlineHeaderLabelWeight = FontWeight.w600;
+  static const double outlineHeaderLabelLetterSpacing =
+      0.09 * outlineHeaderLabelSize;
+  static const double outlineHeaderMetaSize = 11;
+
+  static const double outlineRowTextSize = 15;
+  static const FontWeight outlineRowH1Weight = FontWeight.w500;
+  static const FontWeight outlineRowInactiveWeight = FontWeight.w400;
+  static const FontWeight outlineRowActiveWeight = FontWeight.w600;
 }
 
 /// Spacing & geometry constants from TOKENS.md's "Spacing & geometry"
@@ -152,6 +171,53 @@ class AppGeometry {
   static const double radiusSearchField = 10;
   static const double librarySearchFieldHeight = 40;
   static const double libraryHeaderIconTileSize = 26;
+
+  // §03 Outline sheet — transcribed from the HTML reference's screen-03
+  // markup (design/reference/MarkdownViewerMobile.dc.html): the sheet's own
+  // padding is `10px 8px 40px` (top/horizontal/bottom); the header row adds
+  // a further `0 14px 10px` on top of that (`outlineHeaderHorizontalPadding`
+  // / `outlineHeaderBottomPadding`); the rows wrapper adds a further `0 6px`
+  // (`outlineRowsHorizontalPadding`); each row then adds its own indent —
+  // `0 14px` for H1, `0 14px 0 28px` for H2, `0 14px 0 42px` for H3 — so a
+  // row's *effective* left indent from the screen edge is
+  // `outlineSheetHorizontalPadding + outlineRowsHorizontalPadding +` the
+  // level's own [outlineIndentH1]/[outlineIndentH2]/[outlineIndentH3].
+  // Radius/row-height reuse the shared [radiusButtonMin]-style pattern of a
+  // screen-specific name even where the value coincides with another
+  // screen's token (see [radiusLibraryRow]/[radiusSearchField], both 10).
+  static const double sheetTopPadding = 10;
+  static const double outlineSheetHorizontalPadding = 8;
+  static const double outlineSheetBottomPaddingMin = 40;
+  static const double outlineHeaderHorizontalPadding = 14;
+  static const double outlineHeaderBottomPadding = 10;
+  static const double outlineRowsHorizontalPadding = 6;
+  static const double radiusOutlineRow = 10;
+  static const double outlineIndentH1 = 14;
+  static const double outlineIndentH2 = 28;
+  static const double outlineIndentH3 = 42;
+  static const double outlineRowPaddingRight = 14;
+  static const double outlineGrabberWidth = 40;
+  static const double outlineGrabberHeight = 4;
+  static const double outlineGrabberRadius = 2;
+  static const double outlineGrabberBottomMargin = 12;
+
+  // The outline sheet's entrance animation — design/README.md §Interactions
+  // ("Outline opens the sheet (spring, ~0.3s)"). Reuses [motionPanelCurve]
+  // (TOKENS.md's only spring-shaped easing curve) rather than inventing a
+  // second one; only the duration is outline-specific.
+  static const Duration outlineSheetDuration = Duration(milliseconds: 300);
+}
+
+/// Non-themed overlay colors — identical across light/dark (unlike
+/// [AppTokens]'s per-theme palette), so they don't belong in either color
+/// table. Currently just the Outline sheet's veil (design/README.md §03:
+/// "Veil `rgba(10,11,12,.28)`"; the same value in the HTML reference's
+/// screen-03 markup regardless of theme). Kept in tokens.dart alongside
+/// [AppTokens] so it stays the only file with `Color(...)` literals.
+class AppOverlay {
+  AppOverlay._();
+
+  static const Color outlineVeil = Color(0x470A0B0C); // rgba(10,11,12,.28)
 }
 
 /// Color tokens for one theme (light or dark), transcribed 1:1 from

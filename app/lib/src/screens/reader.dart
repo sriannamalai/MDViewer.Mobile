@@ -23,6 +23,7 @@ import '../vault/vault_entry.dart';
 import '../vault/vault_path.dart';
 import '../vault/vault_source.dart';
 import '../widgets/text_scale_stepper.dart';
+import 'outline_sheet.dart';
 
 /// The Reader — design/README.md §02: blurred header (back/filename+meta/
 /// share), a 2px scroll-progress hairline, the rendered document in a
@@ -298,10 +299,21 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
+  /// Presents the Outline sheet (design/README.md §03) over this Reader —
+  /// a no-op while the document hasn't finished loading yet (no
+  /// [ReaderDocState] to show). Wires its tap-a-heading callback straight
+  /// to the same `__mdvScrollToLine` script the search screen (Task 7) will
+  /// also use — the sheet dismisses itself right after invoking this.
   void _openOutlineSheet() {
-    // TODO(task-6): open the outline sheet (design/README.md §03). Wired as
-    // a no-op placeholder so the bottom bar's "Outline" pill is tappable
-    // (44px+ target) ahead of Task 6 landing.
+    final docState = _docState;
+    if (docState == null) return;
+    OutlineSheet.show(
+      context,
+      docState: docState,
+      onTapHeading: (line) {
+        unawaited(_controller.runJavaScript(scrollToLineScript(line)));
+      },
+    );
   }
 
   @override
