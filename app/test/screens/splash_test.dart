@@ -46,13 +46,16 @@ VaultState _fakeVaultState() => VaultState(
   folderProvider: _FakeVaultProvider(),
 );
 
-// SplashGate transitions to AppShell, whose Settings tab (built eagerly —
-// IndexedStack mounts all its children up front, not just the visible one)
-// reads AppState via Provider — so it must be in scope even for tests that
-// never navigate to Settings.
-Widget _wrap(Widget child) {
-  return ChangeNotifierProvider<AppState>(
-    create: (_) => AppState(),
+// SplashGate transitions to AppShell, whose Settings and Library tabs (both
+// built eagerly — IndexedStack mounts all its children up front, not just
+// the visible one) read AppState/VaultState via Provider — so both must be
+// in scope even for tests that never navigate away from the splash itself.
+Widget _wrap(Widget child, VaultState vaultState) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<AppState>(create: (_) => AppState()),
+      ChangeNotifierProvider<VaultState>.value(value: vaultState),
+    ],
     child: MaterialApp(home: child),
   );
 }
@@ -73,6 +76,7 @@ void main() {
           vaultState: vaultState,
           minDisplay: const Duration(milliseconds: 300),
         ),
+        vaultState,
       ),
     );
 
@@ -95,6 +99,7 @@ void main() {
             vaultState: vaultState,
             minDisplay: const Duration(milliseconds: 300),
           ),
+          vaultState,
         ),
       );
       await tester.pump(const Duration(milliseconds: 100));
@@ -122,7 +127,10 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _wrap(SplashGate(vaultState: vaultState, minDisplay: Duration.zero)),
+      _wrap(
+        SplashGate(vaultState: vaultState, minDisplay: Duration.zero),
+        vaultState,
+      ),
     );
     // A handful of plain pumps flushes the asset-read/prefs futures without
     // needing pumpAndSettle (which would spin forever against the splash's
@@ -148,6 +156,7 @@ void main() {
           vaultState: vaultState,
           minDisplay: const Duration(milliseconds: 50),
         ),
+        vaultState,
       ),
     );
     await tester.pump(const Duration(milliseconds: 60));

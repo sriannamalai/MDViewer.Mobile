@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../tokens.dart';
 import '../widgets/tab_bar.dart';
+import 'library.dart';
 import 'settings.dart';
 
 /// The app shell: three tab roots (Library, Search, Settings) behind
@@ -31,29 +32,17 @@ class _AppShellState extends State<AppShell> {
       backgroundColor: tokens.bg,
       body: IndexedStack(
         index: _current.index,
-        children: const [
-          _LibraryPlaceholder(),
-          _SearchPlaceholder(),
-          SettingsScreen(),
+        children: [
+          LibraryScreen(onOpenSearch: () => _switchTo(AppTab.search)),
+          const _SearchPlaceholder(),
+          const SettingsScreen(),
         ],
       ),
-      bottomNavigationBar: AppTabBar(
-        current: _current,
-        onSelect: (tab) => setState(() => _current = tab),
-      ),
+      bottomNavigationBar: AppTabBar(current: _current, onSelect: _switchTo),
     );
   }
-}
 
-/// Stand-in for the Library root — Task 4 replaces this with the real tree/
-/// search-field/recents screen (design/README.md §01).
-class _LibraryPlaceholder extends StatelessWidget {
-  const _LibraryPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const _TabPlaceholder(title: 'Library', note: 'Lands in Task 4.');
-  }
+  void _switchTo(AppTab tab) => setState(() => _current = tab);
 }
 
 /// Stand-in for the Search root — Task 7 replaces this with the real query/

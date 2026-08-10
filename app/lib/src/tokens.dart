@@ -72,6 +72,22 @@ class AppTypeScale {
   static const double uiMetaSizeMax = 11.5;
   static const FontWeight uiMetaWeightMin = FontWeight.w400;
   static const FontWeight uiMetaWeightMax = FontWeight.w500;
+
+  // §01 Library — the section label and header wordmark carry
+  // mobile-specific sizes distinct from the desktop UI-label token
+  // (uiLabelSize 10.5). Transcribed from design/README.md §01 ("uppercase
+  // section label (11px/600/.09em text3)") and confirmed verbatim against
+  // design/reference/MarkdownViewerMobile.dc.html's screen-01 markup
+  // (`font-size:11px` on the section-label divs; `font-size:17px;
+  // font-weight:600; letter-spacing:-.2px` on the wordmark span).
+  static const double librarySectionLabelSize = 11;
+  static const FontWeight librarySectionLabelWeight = FontWeight.w600;
+  static const double librarySectionLabelLetterSpacing =
+      0.09 * librarySectionLabelSize;
+
+  static const double libraryWordmarkSize = 17;
+  static const FontWeight libraryWordmarkWeight = FontWeight.w600;
+  static const double libraryWordmarkLetterSpacing = -0.2;
 }
 
 /// Spacing & geometry constants from TOKENS.md's "Spacing & geometry"
@@ -107,6 +123,16 @@ class AppGeometry {
   static const Duration motionVeil = Duration(milliseconds: 140);
 
   static const double minTapTarget = 44; // README "All tap targets >=44px"
+
+  // §01 Library — row/search-field radius (10px) and the header icon tile
+  // size, distinct from the desktop button/block radii (6-8px) already
+  // above. Transcribed from the HTML reference's screen-01 markup
+  // (`border-radius:10px` on both the search field and tree rows;
+  // `width:26px; height:26px` on the icon tile).
+  static const double radiusLibraryRow = 10;
+  static const double radiusSearchField = 10;
+  static const double librarySearchFieldHeight = 40;
+  static const double libraryHeaderIconTileSize = 26;
 }
 
 /// Color tokens for one theme (light or dark), transcribed 1:1 from

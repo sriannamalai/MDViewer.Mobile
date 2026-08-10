@@ -3,17 +3,22 @@
 // widget/scroll state rather than rebuilding it from scratch, per the
 // plan's Task 3 checklist ("tab switching preserves each tab's state").
 
+import 'package:app/src/screens/library.dart';
 import 'package:app/src/screens/settings.dart';
 import 'package:app/src/screens/shell.dart';
 import 'package:app/src/state/app_state.dart';
+import 'package:app/src/state/vault_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Widget _wrap(AppState appState) {
-  return ChangeNotifierProvider<AppState>.value(
-    value: appState,
+Widget _wrap(AppState appState, VaultState vaultState) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<AppState>.value(value: appState),
+      ChangeNotifierProvider<VaultState>.value(value: vaultState),
+    ],
     child: const MaterialApp(home: AppShell()),
   );
 }
@@ -28,11 +33,14 @@ void main() {
   ) async {
     final appState = AppState();
     await appState.init();
+    final vaultState = VaultState();
+    await vaultState.init();
 
-    await tester.pumpWidget(_wrap(appState));
+    await tester.pumpWidget(_wrap(appState, vaultState));
     await tester.pump();
 
     expect(find.byType(SettingsScreen), findsNothing);
+    expect(find.byType(LibraryScreen), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('appTab-settings')));
     await tester.pumpAndSettle();
@@ -42,9 +50,11 @@ void main() {
     await tester.tap(find.byKey(const Key('appTab-library')));
     await tester.pumpAndSettle();
 
-    // "Library" alone is ambiguous (it's also the active tab-bar label) —
-    // the placeholder's note text is unique to its body.
-    expect(find.text('Lands in Task 4.'), findsOneWidget);
+    // LibraryScreen stays alive in the IndexedStack the whole time, but
+    // re-asserting its presence after switching back confirms the tab
+    // actually flipped rather than Settings simply overlaying it.
+    expect(find.byType(LibraryScreen), findsOneWidget);
+    expect(find.byType(SettingsScreen), findsNothing);
   });
 
   testWidgets(
@@ -60,8 +70,10 @@ void main() {
 
       final appState = AppState();
       await appState.init();
+      final vaultState = VaultState();
+      await vaultState.init();
 
-      await tester.pumpWidget(_wrap(appState));
+      await tester.pumpWidget(_wrap(appState, vaultState));
       await tester.pump();
 
       await tester.tap(find.byKey(const Key('appTab-settings')));
