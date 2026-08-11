@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -87,6 +88,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Object? _error;
   Map<String, dynamic>? _parsedDoc;
 
+  /// The images [_load] prefetched for this document, kept for the
+  /// screen's lifetime so theme/text-scale re-renders reuse them. (Found
+  /// on-device in Task 8's E2E: [_renderInto] used to default to
+  /// [DocImages.empty] on re-render, so stepping Aa or toggling theme
+  /// silently dropped every relative image from the re-rendered page.)
+  DocImages _images = DocImages.empty;
+
   /// Set once, in [_load], the moment the document's [DocModel] is known.
   /// Its own listener (added right after construction) triggers a local
   /// `setState` on every scrollspy update, so the header meta/hairline/
@@ -160,12 +168,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
       if (!mounted) return;
       final docState = ReaderDocState(model: model)
         ..addListener(_handleDocStateChanged);
+      _images = images;
       setState(() {
         _parsedDoc = parsed;
         _docState = docState;
         _status = _LoadStatus.ready;
       });
-      await _renderInto(images: images);
+      await _renderInto();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -175,7 +184,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
-  Future<void> _renderInto({DocImages? images}) async {
+  Future<void> _renderInto() async {
     final doc = _parsedDoc;
     if (doc == null) return;
     final appState = context.read<AppState>();
@@ -186,7 +195,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       doc,
       brightness: brightness,
       textScale: scale,
-      resolver: (images ?? DocImages.empty).toResolver(),
+      resolver: _images.toResolver(),
     );
     _renderedScale = scale;
     _renderedBrightness = brightness;
@@ -230,15 +239,34 @@ class _ReaderScreenState extends State<ReaderScreen> {
     NavigationRequest request,
   ) {
     final uri = Uri.tryParse(request.url);
-    if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+    if (uri == null) return NavigationDecision.prevent;
+    if (uri.scheme == 'http' || uri.scheme == 'https') {
       unawaited(_openExternal(uri));
       return NavigationDecision.prevent;
     }
-    if (uri != null && uri.scheme.isEmpty && !request.url.startsWith('data:')) {
+    if (uri.scheme.isEmpty && !request.url.startsWith('data:')) {
       unawaited(_openInternalRelative(request.url));
       return NavigationDecision.prevent;
     }
-    return NavigationDecision.navigate;
+    // The rendered document itself (loadHtmlString surfaces as a data: URL
+    // where the platform routes API-initiated loads through the delegate).
+    if (uri.scheme == 'data') return NavigationDecision.navigate;
+    // iOS WKWebView routes loadHtmlString's own load through the delegate
+    // as about:blank — allow it there. Android's WebView never sends
+    // API-initiated loads through shouldOverrideUrlLoading, so an about:*
+    // request there can only be a tapped relative link that Chromium
+    // collapsed against the null base URL — allowing it navigated the
+    // WebView to a literal blank page (found on-device in Task 8's E2E).
+    if (uri.scheme == 'about' &&
+        defaultTargetPlatform != TargetPlatform.android) {
+      return NavigationDecision.navigate;
+    }
+    // Everything else — mailto:, tel:, file:, about: on Android, unknown
+    // schemes — is an explicit decline now, not a fall-through navigate
+    // (which could replace the document with a blank/error page). v1 scope:
+    // only web links (external) and vault-relative .md links (internal)
+    // actually go somewhere.
+    return NavigationDecision.prevent;
   }
 
   Future<void> _openExternal(Uri uri) async {
@@ -283,6 +311,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
         doc,
         brightness: brightness,
         textScale: context.read<AppState>().textScale,
+        // Same prefetched images the on-screen render embeds: without the
+        // resolver the exported "self-contained" HTML would silently lose
+        // every relative image (same Task 8 E2E finding as _renderInto).
+        resolver: _images.toResolver(),
       );
       final dir = await getTemporaryDirectory();
       final filename = ShareFilename.forEntryName(widget.entry.name);
@@ -587,6 +619,12 @@ class _ProgressHairline extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: FractionallySizedBox(
             widthFactor: progress.clamp(0.0, 1.0),
+            // heightFactor is required here: Align hands the fill loose
+            // height constraints, and without it the accent ColoredBox
+            // sizes to zero height — a track with an invisible fill
+            // (caught on-device in Task 8's E2E; the widget test now pins
+            // the painted size too).
+            heightFactor: 1,
             child: ColoredBox(color: tokens.accent),
           ),
         ),

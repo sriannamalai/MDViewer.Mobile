@@ -72,11 +72,19 @@ class _FakeDocRenderer extends DocRenderer {
           'span': {'startLine': 3},
           'children': [
             {'kind': 'text', 'value': 'one two three'},
+            // Exercises DocImages.prefetch + the re-render image-reuse
+            // regression: only resolves when the test's vault actually
+            // holds img/x.png; harmlessly skipped everywhere else.
+            {'kind': 'image', 'destination': 'img/x.png'},
           ],
         },
       ],
     };
   }
+
+  /// The resolver the most recent [render] call received — lets tests
+  /// assert a re-render still carries the images prefetched at load time.
+  MdvResolver? lastResolver;
 
   @override
   String render(
@@ -86,6 +94,7 @@ class _FakeDocRenderer extends DocRenderer {
     MdvResolver? resolver,
   }) {
     renderCalls++;
+    lastResolver = resolver;
     return '<html><body><h1 data-md-line="1">Hello</h1></body></html>';
   }
 }
@@ -98,8 +107,14 @@ VaultEntry _sampleEntry({String relPath = 'Welcome.md'}) => VaultEntry(
   source: VaultSource.sample,
 );
 
-Future<VaultState> _vaultWith(VaultEntry entry, String markdown) async {
-  final provider = _FakeVaultProvider(files: {entry.relPath: _bytes(markdown)});
+Future<VaultState> _vaultWith(
+  VaultEntry entry,
+  String markdown, {
+  Map<String, Uint8List> extraFiles = const {},
+}) async {
+  final provider = _FakeVaultProvider(
+    files: {entry.relPath: _bytes(markdown), ...extraFiles},
+  );
   final vault = VaultState(
     sampleProvider: provider,
     folderProvider: _FakeVaultProvider(),
@@ -178,6 +193,30 @@ void main() {
     await tester.pump();
 
     expect(find.textContaining('Hello · 42%'), findsOneWidget);
+
+    // The painted fill, not just the label: the accent bar must actually
+    // have the hairline's full height and 42% of its width. (Regression:
+    // a FractionallySizedBox without heightFactor collapsed the fill to
+    // zero height — track visible, fill invisible, found on-device.)
+    final fillFinder = find.descendant(
+      of: find.byType(FractionallySizedBox),
+      matching: find.byType(ColoredBox),
+    );
+    expect(fillFinder, findsOneWidget);
+    final fillSize = tester.getSize(fillFinder);
+    final trackSize = tester.getSize(
+      // .first = the nearest ColoredBox ancestor (the line2 track); further
+      // ancestors (screen background etc.) also match the type.
+      find
+          .ancestor(
+            of: find.byType(FractionallySizedBox),
+            matching: find.byType(ColoredBox),
+          )
+          .first,
+    );
+    expect(fillSize.height, trackSize.height);
+    expect(fillSize.height, greaterThan(0));
+    expect(fillSize.width, moreOrLessEquals(trackSize.width * 0.42, epsilon: 1));
   });
 
   testWidgets('a garbage scrollspy message is ignored, not a crash', (
@@ -200,6 +239,39 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.textContaining('Hello · 0%'), findsOneWidget);
+  });
+
+  testWidgets('navigation policy: only data: (and iOS about:blank) may '
+      'navigate; mailto:/tel:/about: are explicitly declined', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final decide =
+        platform.controllers.single.navigationDelegate!.onNavigationRequest!;
+    Future<NavigationDecision> decision(String url) async =>
+        await decide(NavigationRequest(url: url, isMainFrame: true));
+
+    // The rendered document's own load.
+    expect(await decision('data:text/html,x'), NavigationDecision.navigate);
+    // Explicit declines — a fall-through navigate here replaced the
+    // document with a blank page on Android (Task 8 on-device finding).
+    expect(await decision('mailto:a@b.c'), NavigationDecision.prevent);
+    expect(await decision('tel:+15551234567'), NavigationDecision.prevent);
+    // Tests run as TargetPlatform.android by default: about:* is a
+    // collapsed relative-link tap there, never an API-initiated load.
+    expect(await decision('about:blank'), NavigationDecision.prevent);
+    // External links: prevented in the WebView (handed to the OS browser).
+    expect(await decision('https://example.com'), NavigationDecision.prevent);
+    // Internal relative links: prevented in the WebView (routed in-app).
+    expect(await decision('Other.md'), NavigationDecision.prevent);
   });
 
   testWidgets(
@@ -359,7 +431,13 @@ void main() {
     'the Aa button opens a bottom sheet that re-renders at the new scale',
     (tester) async {
       final entry = _sampleEntry();
-      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+      final vault = await _vaultWith(
+        entry,
+        '# Hello\n\none two three\n',
+        extraFiles: {
+          'img/x.png': Uint8List.fromList([1, 2, 3]),
+        },
+      );
       final appState = AppState();
       await appState.init();
       final renderer = _FakeDocRenderer();
@@ -381,6 +459,14 @@ void main() {
 
       expect(find.text('115%'), findsOneWidget);
       expect(renderer.renderCalls, 2);
+
+      // The re-render must still resolve the image prefetched at load —
+      // regression: _renderInto used to fall back to DocImages.empty on
+      // re-render, so the second render's resolver dropped every relative
+      // image (found on-device in Task 8's E2E).
+      final resolved = renderer.lastResolver!(MdvResolveKind.image, 'img/x.png');
+      expect(resolved, isNotNull);
+      expect(resolved, startsWith('data:image/png;base64,'));
     },
   );
 
