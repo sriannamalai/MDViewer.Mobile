@@ -110,13 +110,21 @@ class VaultFolderRow extends StatelessWidget {
                 width: 10,
                 child: Text(
                   expanded ? '▾' : '▸',
-                  style: TextStyle(fontSize: 10, color: tokens.text3),
+                  style: TextStyle(
+                    fontSize: AppTypeScale.libraryTreeCaretSize,
+                    color: tokens.text3,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
               const Opacity(
                 opacity: 0.75,
-                child: Text('📁', style: TextStyle(fontSize: 15)),
+                child: Text(
+                  '📁',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.libraryFolderGlyphSize,
+                  ),
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -125,7 +133,7 @@ class VaultFolderRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: AppFonts.ibmPlexSans,
-                    fontSize: 15,
+                    fontSize: AppTypeScale.libraryRowTextSize,
                     color: tokens.text,
                   ),
                 ),
@@ -134,7 +142,7 @@ class VaultFolderRow extends StatelessWidget {
                 '${entry.mdCount}',
                 style: TextStyle(
                   fontFamily: AppFonts.jetBrainsMono,
-                  fontSize: 12,
+                  fontSize: AppTypeScale.libraryRowMetaSize,
                   color: tokens.text3,
                 ),
               ),
@@ -216,7 +224,7 @@ class LibraryFileRow extends StatelessWidget {
                   'M',
                   style: TextStyle(
                     fontFamily: AppFonts.jetBrainsMono,
-                    fontSize: 11,
+                    fontSize: AppTypeScale.libraryBadgeSize,
                     color: tokens.accent,
                   ),
                 ),
@@ -228,7 +236,7 @@ class LibraryFileRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: AppFonts.ibmPlexSans,
-                    fontSize: 15,
+                    fontSize: AppTypeScale.libraryRowTextSize,
                     fontWeight: active ? FontWeight.w500 : FontWeight.w400,
                     color: nameColor,
                   ),
@@ -237,7 +245,10 @@ class LibraryFileRow extends StatelessWidget {
               trailing ??
                   Text(
                     '›',
-                    style: TextStyle(fontSize: 13, color: chevronColor),
+                    style: TextStyle(
+                      fontSize: AppTypeScale.libraryChevronSize,
+                      color: chevronColor,
+                    ),
                   ),
             ],
           ),

@@ -88,7 +88,10 @@ class AppTabBar extends StatelessWidget {
                       children: [
                         Text(
                           spec.glyph,
-                          style: TextStyle(fontSize: 19, color: color),
+                          style: TextStyle(
+                            fontSize: AppTypeScale.tabGlyphSize,
+                            color: color,
+                          ),
                         ),
                         const SizedBox(height: 3),
                         Text(
@@ -97,7 +100,7 @@ class AppTabBar extends StatelessWidget {
                             fontFamily: AppFonts.ibmPlexSans,
                             fontSize: AppTypeScale.uiLabelSize,
                             fontWeight: active
-                                ? FontWeight.w500
+                                ? AppTypeScale.tabLabelActiveWeight
                                 : AppTypeScale.uiTextWeightMin,
                             color: color,
                           ),

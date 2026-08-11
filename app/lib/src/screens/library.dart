@@ -290,7 +290,7 @@ class _RecentSection extends StatelessWidget {
             ),
             style: TextStyle(
               fontFamily: AppFonts.jetBrainsMono,
-              fontSize: 12,
+              fontSize: AppTypeScale.libraryRowMetaSize,
               color: tokens.text3,
             ),
           ),
@@ -394,6 +394,11 @@ class _ErrorBanner extends StatelessWidget {
   final String message;
   final VoidCallback onDismiss;
 
+  // Genuinely one-off: this banner (and its ✕ glyph) isn't in the design
+  // reference at all, so the size is undesigned and deliberately NOT an
+  // AppTypeScale token.
+  static const double _dismissGlyphSize = 13;
+
   @override
   Widget build(BuildContext context) {
     final tokens = AppTokens.of(context);
@@ -418,7 +423,10 @@ class _ErrorBanner extends StatelessWidget {
             onTap: onDismiss,
             child: Text(
               '✕',
-              style: TextStyle(fontSize: 13, color: tokens.accent),
+              style: TextStyle(
+                fontSize: _dismissGlyphSize,
+                color: tokens.accent,
+              ),
             ),
           ),
         ],

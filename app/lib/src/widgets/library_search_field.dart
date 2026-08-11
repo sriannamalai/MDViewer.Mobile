@@ -42,7 +42,13 @@ class LibrarySearchField extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Text('⌕', style: TextStyle(fontSize: 14, color: tokens.text3)),
+                Text(
+                  '⌕',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.librarySearchFieldTextSize,
+                    color: tokens.text3,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 // Expanded + ellipsis rather than a bare Text: on a narrow
                 // viewport (small phones, or a split-screen width) the full
@@ -54,7 +60,7 @@ class LibrarySearchField extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontFamily: AppFonts.ibmPlexSans,
-                      fontSize: 14,
+                      fontSize: AppTypeScale.librarySearchFieldTextSize,
                       color: tokens.text3,
                     ),
                   ),

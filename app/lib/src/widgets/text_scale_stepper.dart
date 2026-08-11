@@ -104,7 +104,7 @@ class _StepButton extends StatelessWidget {
               child: Text(
                 icon,
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: AppTypeScale.stepperGlyphSize,
                   fontWeight: FontWeight.w600,
                   color: tokens.text2,
                 ),

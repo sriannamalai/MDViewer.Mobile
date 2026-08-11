@@ -112,9 +112,10 @@ class SplashScreen extends StatelessWidget {
                         TextSpan(
                           style: const TextStyle(
                             fontFamily: AppFonts.ibmPlexSans,
-                            fontSize: 26,
+                            fontSize: AppTypeScale.splashWordmarkSize,
                             fontWeight: FontWeight.w600,
-                            letterSpacing: -0.3,
+                            letterSpacing:
+                                AppTypeScale.splashWordmarkLetterSpacing,
                           ),
                           children: [
                             TextSpan(
@@ -136,7 +137,7 @@ class SplashScreen extends StatelessWidget {
                         'Markdown, rendered beautifully — offline',
                         style: TextStyle(
                           fontFamily: AppFonts.ibmPlexSans,
-                          fontSize: 12,
+                          fontSize: AppTypeScale.splashTaglineSize,
                           color: dark.text2,
                         ),
                       ),
@@ -155,7 +156,7 @@ class SplashScreen extends StatelessWidget {
                         'v${tryMdviewerVersion() ?? 'dev'}',
                         style: TextStyle(
                           fontFamily: AppFonts.jetBrainsMono,
-                          fontSize: 10.5,
+                          fontSize: AppTypeScale.uiMetaSizeMin,
                           color: dark.text3,
                         ),
                       ),

@@ -1,9 +1,12 @@
 // Design tokens transcribed verbatim from design/TOKENS.md (color tables,
 // both themes) and design/README.md (§Fidelity + per-screen type sizes for
-// the mobile scale). This is the ONLY place `Color(...)` literals for the
-// app's palette may appear — every other file reaches colors through
+// the mobile scale). This is the only place `Color(...)` literals for the
+// app's *palette* may appear — every other file reaches colors through
 // `AppTokens.of(context)` or the ambient `Theme.of(context).colorScheme`
-// derived from it. Reviewers: grep for ad-hoc `Color(0x` outside this file.
+// derived from it. One documented exception: splash.dart carries the
+// splash-only literals design/README.md §00 specifies outside TOKENS.md
+// (background gradient stops, glow, loading-bar fill). Reviewers: grep for
+// ad-hoc `Color(0x` outside this file and splash.dart.
 //
 // Source of truth:
 //   - design/TOKENS.md            → color tables (light + dark), spacing/geometry
@@ -73,6 +76,15 @@ class AppTypeScale {
   static const FontWeight uiMetaWeightMin = FontWeight.w400;
   static const FontWeight uiMetaWeightMax = FontWeight.w500;
 
+  // §00 Splash — wordmark and tagline sizes from design/README.md §00 /
+  // the HTML reference's splash markup (`font-size:26px;
+  // letter-spacing:-.3px` on the wordmark, `font-size:12px` on the
+  // tagline). The version line reuses the desktop-shared [uiMetaSizeMin]
+  // (10.5px) at its call site.
+  static const double splashWordmarkSize = 26;
+  static const double splashWordmarkLetterSpacing = -0.3;
+  static const double splashTaglineSize = 12;
+
   // §01 Library — the section label and header wordmark carry
   // mobile-specific sizes distinct from the desktop UI-label token
   // (uiLabelSize 10.5). Transcribed from design/README.md §01 ("uppercase
@@ -88,6 +100,30 @@ class AppTypeScale {
   static const double libraryWordmarkSize = 17;
   static const FontWeight libraryWordmarkWeight = FontWeight.w600;
   static const double libraryWordmarkLetterSpacing = -0.2;
+
+  // §01 Library — remaining per-glyph/row sizes from the same screen-01
+  // reference markup: the search field's ⌕ glyph + placeholder text
+  // (14px — distinct from §04's [searchIconSize] per this file's
+  // screen-scoped precedent), the tree's disclosure caret (10px), folder
+  // glyph (15px), row name (15px, tree + Recent rows), mono row meta
+  // (folder child-count and Recent relative-time, both 12px), the mono
+  // "M" file badge (11px), and the file row's "›" chevron (13px).
+  static const double librarySearchFieldTextSize = 14;
+  static const double libraryTreeCaretSize = 10;
+  static const double libraryFolderGlyphSize = 15;
+  static const double libraryRowTextSize = 15;
+  static const double libraryRowMetaSize = 12;
+  static const double libraryBadgeSize = 11;
+  static const double libraryChevronSize = 13;
+
+  // §01 header's circular theme toggle and the shell's bottom tab bar —
+  // glyph sizes and the active tab label's weight, from the reference
+  // markup's screen-01 header row and bottom bar (`font-size:15px` on the
+  // toggle glyph; `font-size:19px` icons and `font-weight:500` active
+  // labels in the tab bar).
+  static const double themeToggleGlyphSize = 15;
+  static const double tabGlyphSize = 19;
+  static const FontWeight tabLabelActiveWeight = FontWeight.w500;
 
   // §02 Reader — header/bottom-bar sizes not covered by any desktop-shared
   // token. Transcribed from design/README.md §02 ("filename 14px/600 ...
@@ -107,6 +143,11 @@ class AppTypeScale {
   static const FontWeight readerOutlineTextWeight = FontWeight.w500;
   static const double readerSectionSize = 11;
   static const double readerAaGlyphSize = 14;
+
+  // Text-scale stepper (the Reader's Aa sheet and Settings share the same
+  // [TextScaleStepper] widget): the circular −/+ buttons' glyph size, from
+  // the reference markup's stepper buttons (`font-size:18px`).
+  static const double stepperGlyphSize = 18;
 
   // §03 Outline sheet — transcribed from design/README.md §03 ("header row
   // — uppercase 'On this page' label left, '1,140 words · 5 min' mono 11px

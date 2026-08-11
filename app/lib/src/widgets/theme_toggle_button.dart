@@ -37,7 +37,10 @@ class ThemeToggleButton extends StatelessWidget {
           child: Center(
             child: Text(
               isDark ? '☀' : '☾',
-              style: TextStyle(fontSize: 15, color: tokens.text2),
+              style: TextStyle(
+                fontSize: AppTypeScale.themeToggleGlyphSize,
+                color: tokens.text2,
+              ),
             ),
           ),
         ),
