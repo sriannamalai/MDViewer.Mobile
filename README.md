@@ -95,6 +95,9 @@ fix, not a version change.
 - **Share exports self-contained HTML only** — no PDF export yet.
 - **No code-block language/Copy header** — the design shows one; the
   library's HTML render doesn't emit it yet (ledgered library gap).
+- **The reader renders with the system font stack** — the webview document
+  doesn't use the design's Source Serif 4 / IBM Plex Sans / JetBrains Mono
+  (ledgered library gap); the app chrome around it does bundle those fonts.
 - Read-only by design: no editing, no file management, no sync.
 
 ### Regenerating launcher icons

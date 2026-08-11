@@ -25,7 +25,17 @@ class DocImages {
 
   static const DocImages empty = DocImages({});
 
-  static const int maxBytes = 2 * 1024 * 1024; // 2MB cap, per the task brief
+  static const int maxBytes = 2 * 1024 * 1024; // 2MB per-image cap
+
+  /// Aggregate cap across one document's whole prefetch batch. 32MB of raw
+  /// image bytes (~43MB once base64-encoded into `data:` URIs) bounds the
+  /// rendered-HTML string a mobile WebView must hold while still allowing
+  /// sixteen worst-case [maxBytes] images — far beyond any reasonable
+  /// document, but no longer unbounded (an image-heavy vault doc could
+  /// otherwise balloon memory arbitrarily). An image whose bytes would push
+  /// the running total past this declines to the library's default
+  /// resolution, exactly like an individually oversized one.
+  static const int maxTotalBytes = 32 * 1024 * 1024;
 
   static const Map<String, String> _mimeByExtension = {
     '.png': 'image/png',
@@ -50,7 +60,8 @@ class DocImages {
   /// - fails to resolve (missing file, or [resolveBytes] throws — mirrors
   ///   `VaultState.resolveRelative`'s own "never throws, null on failure"
   ///   contract defensively, in case a caller's closure doesn't),
-  /// - or resolves to more than [maxBytes].
+  /// - resolves to more than [maxBytes],
+  /// - or would push the batch's running byte total past [maxTotalBytes].
   static Future<DocImages> prefetch(
     Map<String, dynamic> parsedDoc,
     Future<Uint8List?> Function(String relPath) resolveBytes,
@@ -59,6 +70,7 @@ class DocImages {
     _collectImageTargets(parsedDoc, targets);
 
     final out = <String, String>{};
+    var totalBytes = 0;
     for (final target in targets) {
       if (!_looksRelative(target)) continue;
       final mime = _mimeByExtension[_extensionOf(target)];
@@ -72,6 +84,8 @@ class DocImages {
       }
       if (bytes == null) continue;
       if (bytes.lengthInBytes > maxBytes) continue;
+      if (totalBytes + bytes.lengthInBytes > maxTotalBytes) continue;
+      totalBytes += bytes.lengthInBytes;
 
       out[target] = 'data:$mime;base64,${base64Encode(bytes)}';
     }

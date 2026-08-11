@@ -271,6 +271,40 @@ void main() {
     });
 
     test(
+      'aggregate cap: images past maxTotalBytes decline, earlier ones stay',
+      () async {
+        // Enough per-image-cap-sized images to fill the aggregate cap
+        // exactly (32MB / 2MB = 16), then one 1-byte straggler that would
+        // push the running total past it. Targets resolve in AST order
+        // (LinkedHashSet insertion order), so the straggler is processed
+        // last. One shared buffer keeps the test's own memory modest.
+        final full = Uint8List(DocImages.maxBytes);
+        final fillCount = DocImages.maxTotalBytes ~/ DocImages.maxBytes;
+        final names = [
+          for (var i = 0; i < fillCount; i++)
+            'img${i.toString().padLeft(2, '0')}.png',
+        ];
+        final files = {
+          for (final name in names) name: full,
+          'straggler.png': Uint8List(1),
+        };
+
+        final images = await DocImages.prefetch(
+          _imageDoc([...names, 'straggler.png']),
+          (relPath) async => files[relPath],
+        );
+        final resolver = images.toResolver();
+
+        // Everything up to the cap resolved…
+        expect(resolver(MdvResolveKind.image, names.first), isNotNull);
+        expect(resolver(MdvResolveKind.image, names.last), isNotNull);
+        // …but once the batch total hit maxTotalBytes, even a 1-byte
+        // image declines, exactly like an individually oversized one.
+        expect(resolver(MdvResolveKind.image, 'straggler.png'), isNull);
+      },
+    );
+
+    test(
       'declines absolute, data:, and http(s) targets without ever calling resolveBytes',
       () async {
         var calls = 0;

@@ -228,8 +228,8 @@ class DocRenderer {
   ///   overrides (confirmed by dumping a real rendered `<style>` block: the
   ///   only variables `base.css`/`theme-*.css` ever read are
   ///   `--md-accent`/`--md-bg`/`--md-border`/`--md-code-bg`/`--md-fg`/
-  ///   `--md-quote-fg` — all colors, zero font-size hooks). This path
-  ///   cannot scale text at all.
+  ///   `--md-quote-fg`/`--md-max-width` — six colors plus one layout
+  ///   width, zero font-size hooks). This path cannot scale text at all.
   /// - **`stylesheet`** — per `render/html/page.go`'s
   ///   `if opts.Stylesheet != "" { ew.write(sanitizeCSS(opts.Stylesheet)) }
   ///   else { ew.write(theme.BaseCSS()) }` — REPLACES `theme.BaseCSS()`
