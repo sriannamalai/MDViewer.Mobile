@@ -241,9 +241,12 @@ class DocRenderer {
   /// Also opts in to `codeHeader`: code blocks render inside an
   /// `md-code` container with a language-label + Copy-button header
   /// (design §Reader), and full-page output carries the library's inline
-  /// clipboard JS. That JS guards on `navigator.clipboard`, which some
-  /// WebView origins don't expose — the button is then inert, not a
-  /// crash.
+  /// clipboard JS. That JS guards on `navigator.clipboard`, which a
+  /// `loadHtmlString` page (non-secure origin) never exposes — so on this
+  /// app's WebViews the library handler always no-ops, and the actual
+  /// copy is bridged host-side instead: `codecopy.dart`'s injected script
+  /// posts the code text over the `CodeCopy` JavaScript channel and
+  /// reader.dart writes it with `Clipboard.setData`.
   String render(
     Object doc, {
     required Brightness brightness,
@@ -314,6 +317,14 @@ String mobileProseOverrideCss(double scale) {
       '.markdown-body code,.markdown-body pre,.markdown-body kbd{'
       'font-size:${_px(code)};'
       'line-height:${AppTypeScale.codeLineHeight};'
+      '}\n'
+      // The codeHeader language label + Copy button (base.css hardcodes
+      // both at 12px): scale them with the same Aa step as the code text
+      // they sit above, so the header doesn't stay frozen while the block
+      // grows/shrinks. Selector-identical to base.css's own rules so
+      // source order wins, like everything above.
+      '.markdown-body .md-code-lang,.markdown-body .md-code-copy{'
+      'font-size:${_px(code)};'
       '}\n';
 }
 

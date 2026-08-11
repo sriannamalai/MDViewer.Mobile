@@ -240,6 +240,24 @@ void main() {
       },
     );
 
+    test('scales the codeHeader language label + Copy button with the code '
+        'text (base.css hardcodes both at 12px)', () {
+      expect(
+        mobileProseOverrideCss(1.0),
+        contains(
+          '.markdown-body .md-code-lang,.markdown-body .md-code-copy{'
+          'font-size:12.00px;',
+        ),
+      );
+      expect(
+        mobileProseOverrideCss(1.15),
+        contains(
+          '.markdown-body .md-code-lang,.markdown-body .md-code-copy{'
+          'font-size:${(12 * 1.15).toStringAsFixed(2)}px;',
+        ),
+      );
+    });
+
     test('h1/h2 weights render as CSS numeric weights', () {
       final css = mobileProseOverrideCss(1.0);
       expect(css, contains('font-weight:700')); // h1

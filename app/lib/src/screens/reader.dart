@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -12,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../render/codecopy.dart';
 import '../render/renderer.dart';
 import '../render/resolver.dart';
 import '../render/scrollspy.dart';
@@ -35,10 +37,10 @@ import 'outline_sheet.dart';
 /// parses them once (`renderer.dart`'s [DocRenderer]), pre-resolves its
 /// relative images (`resolver.dart`'s [DocImages]) before the first render
 /// (the plugin's resolver callback is synchronous; the vault read isn't —
-/// see resolver.dart's doc comment), injects the scrollspy script
-/// (`scrollspy.dart`) into the rendered HTML, and re-renders (preserving
-/// scroll position) whenever the effective theme or text-scale step
-/// changes.
+/// see resolver.dart's doc comment), injects the scrollspy and code-copy
+/// scripts (`scrollspy.dart`, `codecopy.dart`) into the rendered HTML, and
+/// re-renders (preserving scroll position) whenever the effective theme or
+/// text-scale step changes.
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({
     super.key,
@@ -130,6 +132,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
         scrollSpyChannelName,
         onMessageReceived: _handleScrollSpyMessage,
       )
+      ..addJavaScriptChannel(
+        codeCopyChannelName,
+        onMessageReceived: _handleCodeCopyMessage,
+      )
       ..setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: _handleNavigationRequest,
@@ -199,7 +205,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
     _renderedScale = scale;
     _renderedBrightness = brightness;
-    await _controller.loadHtmlString(injectScrollSpy(html));
+    // Both injectors use the same lastIndexOf('</body>') splice, and
+    // neither script contains a '</body>' literal, so order only decides
+    // which script sits first before the real closing tag — semantically
+    // independent either way.
+    await _controller.loadHtmlString(injectCodeCopy(injectScrollSpy(html)));
   }
 
   void _handleScrollSpyMessage(JavaScriptMessage message) {
@@ -207,6 +217,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (payload == null) return;
     _docState?.applyScrollSpy(payload);
     unawaited(_persistScroll(payload.progress));
+  }
+
+  /// The code-block Copy button's clipboard write. The message body IS the
+  /// code text (raw `pre.innerText`, not JSON — see codecopy.dart): a
+  /// `loadHtmlString` page has no `navigator.clipboard` (non-secure
+  /// origin), so the injected bridge posts the text here and the host
+  /// performs the write the page itself can't.
+  void _handleCodeCopyMessage(JavaScriptMessage message) {
+    unawaited(Clipboard.setData(ClipboardData(text: message.message)));
   }
 
   Future<void> _persistScroll(double progress) async {

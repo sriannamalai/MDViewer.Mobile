@@ -13,6 +13,7 @@ import 'package:app/src/vault/vault_source.dart';
 import 'package:flutter/foundation.dart'
     show debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MethodCall, SystemChannels;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mdviewer/mdviewer.dart';
 import 'package:provider/provider.dart';
@@ -178,6 +179,81 @@ void main() {
     expect(controller.loadedHtml, contains('data-md-line="1"'));
     expect(controller.loadedHtml, contains('ScrollSpy'));
   });
+
+  testWidgets(
+    'registers the CodeCopy channel and injects its bridge script',
+    (tester) async {
+      final entry = _sampleEntry();
+      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+      final appState = AppState();
+      await appState.init();
+      final renderer = _FakeDocRenderer();
+
+      await tester.pumpWidget(
+        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = platform.controllers.single;
+      // Channel registered alongside ScrollSpy in the controller setup.
+      expect(controller.channels.keys, containsAll(['ScrollSpy', 'CodeCopy']));
+      // Both injected scripts land in the loaded page, each before the
+      // real </body> (splice discipline is unit-tested in
+      // codecopy_test.dart/scrollspy_test.dart against a mermaid decoy).
+      final html = controller.loadedHtml!;
+      expect(html, contains('window.CodeCopy'));
+      final bodyClose = html.lastIndexOf('</body>');
+      expect(html.indexOf('window.CodeCopy'), lessThan(bodyClose));
+      expect(html.indexOf('ScrollSpy'), lessThan(bodyClose));
+    },
+  );
+
+  testWidgets(
+    'a CodeCopy message writes the posted code text to the system clipboard',
+    (tester) async {
+      // The test binding's platform-channel mock: Clipboard.setData goes
+      // over SystemChannels.platform, so capture its MethodCalls.
+      final platformCalls = <MethodCall>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          platformCalls.add(call);
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+
+      final entry = _sampleEntry();
+      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+      final appState = AppState();
+      await appState.init();
+      final renderer = _FakeDocRenderer();
+
+      await tester.pumpWidget(
+        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+      );
+      await tester.pumpAndSettle();
+
+      const snippet = 'func main() {\n\tfmt.Println("hi")\n}\n';
+      platform.controllers.single.simulateMessage('CodeCopy', snippet);
+      await tester.pump();
+
+      final copies = platformCalls.where(
+        (c) => c.method == 'Clipboard.setData',
+      );
+      expect(copies, hasLength(1));
+      expect(
+        (copies.single.arguments as Map)['text'],
+        snippet,
+        reason: 'the message body IS the code text, verbatim — not JSON',
+      );
+    },
+  );
 
   testWidgets('a scrollspy message updates the hairline and section·%', (
     tester,
