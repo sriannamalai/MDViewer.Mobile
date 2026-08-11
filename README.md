@@ -20,16 +20,15 @@ rendering engine as a git submodule (`vendor/markdownviewer`) plus its
 released, checksum-verified mobile binaries — nothing here builds Go or
 touches a Go toolchain.
 
-**Why the submodule is pinned to a commit, not the `v0.7.0` tag:** the
-plugin's `tool/checksums.txt` — which `fetch_binaries.sh` requires before
-it will download anything — was committed to the library's `main` branch
-*after* the `v0.7.0` tag was cut, so the tag's copy of that file has no
-entries and `fetch_binaries.sh` refuses to fetch. `vendor/markdownviewer`
-is pinned to `f086085` (`main`, "chore(flutter): pin v0.7.0 mobile
-artifact checksums; plugin version 0.7.0"), the first commit whose
-`checksums.txt` actually has the `libmdviewer-0.7.0-*.zip` entries. It
-still resolves to the v0.7.0 release artifacts — this is a checkout-ref
-fix, not a version change.
+**How the submodule is pinned:** `vendor/markdownviewer` is pinned to the
+library's `flutter-v0.8.1` tag. Since v0.7.1 the library cuts a
+`flutter-vX.Y.Z` tag on the commit whose plugin `pubspec.yaml` and
+`tool/checksums.txt` both carry that release — so the tag's
+`fetch_binaries.sh` can verify and download the matching
+`libmdviewer-0.8.1-*.zip` release artifacts directly. (The v0.7.0 era
+predated those tags: the checksums landed on `main` *after* the `v0.7.0`
+tag was cut, which forced a raw-commit pin back then. That rationale is
+obsolete — pin `flutter-v*` tags going forward.)
 
 1. **Prerequisites**: Flutter 3.44.x, Xcode + an iOS simulator runtime,
    Android SDK + an AVD (or a physical device for either platform),
@@ -93,8 +92,6 @@ fix, not a version change.
   links (in the system browser) and vault-relative `.md` links (in the
   Reader).
 - **Share exports self-contained HTML only** — no PDF export yet.
-- **No code-block language/Copy header** — the design shows one; the
-  library's HTML render doesn't emit it yet (ledgered library gap).
 - **The reader renders with the system font stack** — the webview document
   doesn't use the design's Source Serif 4 / IBM Plex Sans / JetBrains Mono
   (ledgered library gap); the app chrome around it does bundle those fonts.

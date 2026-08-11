@@ -46,11 +46,11 @@ class DocImages {
     '.svg': 'image/svg+xml',
   };
 
-  /// Walks [parsedDoc] (the `Map` `Mdviewer.parse` decodes to — same
-  /// `children`/`value` codec `DocModel.analyze` reads) for every `image`
-  /// node's `destination`, and resolves each vault-relative one via
-  /// [resolveBytes] (typically `(relPath) =>
-  /// vaultState.resolveRelative(entry, relPath)`).
+  /// Collects every distinct `image` target in [parsedDoc] (the `Map`
+  /// `Mdviewer.parse` decodes to) via the plugin's `collectResolvables`
+  /// — filtered to ABI kind 1 (image); footnote definitions included —
+  /// and resolves each vault-relative one via [resolveBytes] (typically
+  /// `(relPath) => vaultState.resolveRelative(entry, relPath)`).
   ///
   /// A target is skipped (declines to the library's default resolution)
   /// when it:
@@ -66,8 +66,10 @@ class DocImages {
     Map<String, dynamic> parsedDoc,
     Future<Uint8List?> Function(String relPath) resolveBytes,
   ) async {
-    final targets = <String>{};
-    _collectImageTargets(parsedDoc, targets);
+    final targets = [
+      for (final r in collectResolvables(parsedDoc))
+        if (r.kind == 1) r.target,
+    ];
 
     final out = <String, String>{};
     var totalBytes = 0;
@@ -92,16 +94,12 @@ class DocImages {
     return DocImages(out);
   }
 
-  /// The synchronous resolver closure for `MdvOptions.resolver`: answers
-  /// only `image` targets present in the prefetched map (declining — `null`
-  /// — every link and wiki-link kind, and every image this batch didn't
-  /// resolve, so default resolution applies to the rest).
-  MdvResolver toResolver() {
-    return (MdvResolveKind kind, String target) {
-      if (kind != MdvResolveKind.image) return null;
-      return _dataUris[target];
-    };
-  }
+  /// The synchronous resolver closure for `MdvOptions.resolver`: the
+  /// plugin's `resolverFromMap` over the prefetched map, kind-filtered to
+  /// ABI kind 1 (image) — declining (`null`) every link and wiki-link
+  /// kind, and every image this batch didn't resolve, so default
+  /// resolution applies to the rest.
+  MdvResolver toResolver() => resolverFromMap(_dataUris, kindFilter: {1});
 
   static bool _looksRelative(String target) {
     if (target.isEmpty) return false;
@@ -118,23 +116,5 @@ class DocImages {
     final clean = target.split('#').first.split('?').first;
     final dot = clean.lastIndexOf('.');
     return dot < 0 ? '' : clean.substring(dot).toLowerCase();
-  }
-
-  static void _collectImageTargets(Map<String, dynamic> node, Set<String> out) {
-    if (node['kind'] == 'image') {
-      final destination = node['destination'];
-      if (destination is String) out.add(destination);
-    }
-    final children = node['children'];
-    if (children is List) {
-      for (final child in children) {
-        if (child is Map) {
-          final map = child is Map<String, dynamic>
-              ? child
-              : Map<String, dynamic>.from(child);
-          _collectImageTargets(map, out);
-        }
-      }
-    }
   }
 }

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -59,7 +58,8 @@ class DocModel {
   /// the v1 AST JSON to (top-level `version`/`kind`/`children` fields; see
   /// `vendor/markdownviewer/document/json.go`) — and computes the model.
   ///
-  /// ## Real codec shape (verified against the linked v0.7.0 library, not
+  /// ## Real codec shape (verified against the real linked library — a
+  /// v0.7.0-era capture; the version-1 codec is pinned/append-only — not
   /// inferred from the FFI README's prose)
   ///
   /// Container nodes use `"children"`, and a leaf's textual payload lives
@@ -208,7 +208,6 @@ class DocRenderer {
 
   final Mdviewer? _explicitMdv;
   Mdviewer get _mdv => _explicitMdv ?? Mdviewer.instance;
-  String? _baseCss;
 
   /// Parses [markdown] once, with `sourceMap: true` so the rendered HTML
   /// carries `data-md-line` attributes for scrollspy.dart to read.
@@ -219,68 +218,54 @@ class DocRenderer {
   /// `String`) themed for [brightness] at [textScale], resolving images via
   /// [resolver] (resolver.dart's `DocImages.toResolver()`).
   ///
-  /// ## Text-scale mechanism (verified against the linked v0.7.0 library,
-  /// not assumed from the plan's `:root{font-size:...}` sketch)
+  /// ## Text-scale mechanism: `extraCss` (library ≥ v0.8)
   ///
-  /// Two candidate options fields could drive text scale:
+  /// `MdvOptions.extraCss` appends the given CSS AFTER the library's own
+  /// base + theme styling in the assembled page — the append-only hook
+  /// v0.8 added precisely for this app's ledgered gap. So every
+  /// structural `base.css` rule (tables, code blocks, blockquotes,
+  /// admonitions, footnotes, mermaid/KaTeX layout) survives untouched,
+  /// and [mobileProseOverrideCss]'s selector-identical overrides
+  /// (`.markdown-body h1`, `.markdown-body h2`, ...) win by CSS-cascade
+  /// source order alone — no `!important` needed.
   ///
-  /// - **`themeOverrides`** only emits `:root{--md-*:...}` custom-property
-  ///   overrides (confirmed by dumping a real rendered `<style>` block: the
-  ///   only variables `base.css`/`theme-*.css` ever read are
-  ///   `--md-accent`/`--md-bg`/`--md-border`/`--md-code-bg`/`--md-fg`/
-  ///   `--md-quote-fg`/`--md-max-width` — six colors plus one layout
-  ///   width, zero font-size hooks). This path cannot scale text at all.
-  /// - **`stylesheet`** — per `render/html/page.go`'s
-  ///   `if opts.Stylesheet != "" { ew.write(sanitizeCSS(opts.Stylesheet)) }
-  ///   else { ew.write(theme.BaseCSS()) }` — REPLACES `theme.BaseCSS()`
-  ///   entirely rather than appending alongside it (confirmed empirically:
-  ///   rendering with `stylesheet: 'body.markdown-body{font-size:99px}'`
-  ///   produces a `<style>` block with NO `.markdown-body h1` rule at all,
-  ///   only the one supplied rule). A `:root{font-size:...}` snippet also
-  ///   does nothing useful even if it *were* appended: `base.css` sets
-  ///   `body.markdown-body{font-size:16px}` as an absolute value, never
-  ///   inherited from `:root`/`html`, so nothing in the document is
-  ///   relative to the page root's font-size at all.
+  /// (Historical note: on v0.7 this took a workaround — `stylesheet:`
+  /// REPLACES `theme.BaseCSS()` wholesale per `render/html/page.go`, so
+  /// `render()` had to fetch `base.css`'s bytes via
+  /// `Mdviewer.asset('base.css')` and pass `stylesheet: base.css +
+  /// overrides` to reproduce the base styling verbatim. `extraCss`
+  /// retires that concatenation; `themeOverrides` remains unsuitable —
+  /// it only emits `:root{--md-*}` custom-property overrides, and
+  /// `base.css` has zero font-size variable hooks.)
   ///
-  /// **Winning mechanism**: fetch `base.css`'s exact bytes via
-  /// `Mdviewer.asset('base.css')` (cached after the first call) and pass
-  /// `stylesheet: base.css + mobileProseOverrideCss(scale)` — this
-  /// reproduces `theme.BaseCSS()` verbatim (so every structural rule:
-  /// tables, code blocks, blockquotes, admonitions, footnotes, mermaid/
-  /// KaTeX layout — survives untouched) and appends selector-identical
-  /// overrides (`.markdown-body h1`, `.markdown-body h2`, etc.) for the
-  /// mobile prose sizes design/README.md §Fidelity specifies, scaled by
-  /// [textScale]. Because the overrides share the base rules' exact
-  /// selectors and come later in the same stylesheet string, the CSS
-  /// cascade lets them win by source order alone — no `!important`
-  /// needed. Verified: composing `base.css + 'body.markdown-body{font-
-  /// size:calc(15px * 1.15)}...'` and rendering places the override text
-  /// strictly after the original `body{font-size:16px}` rule in the
-  /// output `<style>` block.
+  /// Also opts in to `codeHeader`: code blocks render inside an
+  /// `md-code` container with a language-label + Copy-button header
+  /// (design §Reader), and full-page output carries the library's inline
+  /// clipboard JS. That JS guards on `navigator.clipboard`, which some
+  /// WebView origins don't expose — the button is then inert, not a
+  /// crash.
   String render(
     Object doc, {
     required Brightness brightness,
     required double textScale,
     MdvResolver? resolver,
   }) {
-    final stylesheet =
-        '${_loadBaseCss()}\n${mobileProseOverrideCss(textScale)}';
     return _mdv.renderDoc(
       doc,
       options: MdvOptions(
         theme: brightness == Brightness.dark ? 'dark' : 'light',
         sourceMap: true,
-        stylesheet: stylesheet,
+        extraCss: mobileProseOverrideCss(textScale),
+        codeHeader: true,
         resolver: resolver,
       ),
     );
   }
-
-  String _loadBaseCss() => _baseCss ??= utf8.decode(_mdv.asset('base.css'));
 }
 
-/// The mobile prose override block `DocRenderer.render` appends after
-/// `base.css`'s own text — design/README.md §Fidelity's mobile type scale
+/// The mobile prose override block `DocRenderer.render` passes as
+/// `MdvOptions.extraCss` (appended after the library's base + theme
+/// styling) — design/README.md §Fidelity's mobile type scale
 /// (body 15/1.68, H1 27/700, H2 19/600, code 12) times [scale] (the
 /// `AppState.textScale` step), keyed to the exact same `.markdown-body …`
 /// selectors `theme/base.css` uses so the cascade lets these win by source

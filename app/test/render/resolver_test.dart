@@ -305,6 +305,50 @@ void main() {
     );
 
     test(
+      'collects images inside footnote definitions (collectResolvables walk)',
+      () async {
+        // The plugin's collectResolvables walks doc['footnotes'] too — the
+        // old hand-rolled walk only covered doc['children'], so an image
+        // referenced solely from a footnote definition was never prefetched.
+        final doc = {
+          'version': 1,
+          'kind': 'document',
+          'children': [
+            {
+              'kind': 'paragraph',
+              'children': [
+                {'kind': 'text', 'value': 'body'},
+              ],
+            },
+          ],
+          'footnotes': [
+            {
+              'kind': 'footnoteDefinition',
+              'label': '1',
+              'children': [
+                {
+                  'kind': 'paragraph',
+                  'children': [
+                    {'kind': 'image', 'destination': 'fn.png', 'alt': ''},
+                  ],
+                },
+              ],
+            },
+          ],
+        };
+
+        final images = await DocImages.prefetch(
+          doc,
+          (relPath) async => relPath == 'fn.png' ? _bytes('FN') : null,
+        );
+        expect(
+          images.toResolver()(MdvResolveKind.image, 'fn.png'),
+          startsWith('data:image/png;base64,'),
+        );
+      },
+    );
+
+    test(
       'declines absolute, data:, and http(s) targets without ever calling resolveBytes',
       () async {
         var calls = 0;
