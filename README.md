@@ -60,6 +60,43 @@ fix, not a version change.
    `.so` from `jniLibs` at runtime. Both are exercised by
    `flutter run`/`flutter build`.
 
+   Known iOS quirk: the *first* build after a fresh `pod install` can fail
+   with "Build input file cannot be found" around the `-force_load` path
+   (an Xcode build-ordering issue). Just build again — the second build
+   succeeds.
+
+4. **Test** (no device needed — the renderer is faked where the native
+   library would be required):
+
+   ```bash
+   cd app
+   flutter test
+   ```
+
+## Known limitations (v1)
+
+- **"Open with MDViewer" opens the file alone.** A document handed over
+  by the OS (share sheet, Files app, another app) renders fully, but its
+  *relative* images and links have no folder to resolve against, so they
+  show as unresolved placeholders. Point the app at the containing folder
+  ("Choose folder") to get relative content.
+- **One folder vault at a time.** Picking a new folder replaces the
+  previous grant; there is no multi-vault list. The bundled Samples vault
+  is always present alongside it.
+- **Internal relative `.md` links navigate on iOS only.** On Android the
+  WebView collapses a tapped relative link's URL before the app sees it
+  (`loadHtmlString` has no base URL), so the target is unrecoverable —
+  the tap is deliberately a no-op there rather than a blank page.
+- **Wiki-links (`[[Like This]]`) do not navigate** — they render styled
+  but inert. Use the Library tree or Search to move between documents.
+- **`mailto:` / `tel:` links are declined** — v1 opens only `http(s)`
+  links (in the system browser) and vault-relative `.md` links (in the
+  Reader).
+- **Share exports self-contained HTML only** — no PDF export yet.
+- **No code-block language/Copy header** — the design shows one; the
+  library's HTML render doesn't emit it yet (ledgered library gap).
+- Read-only by design: no editing, no file management, no sync.
+
 ### Regenerating launcher icons
 
 Launcher icons are generated from `design/assets/icon-tile.svg` via
