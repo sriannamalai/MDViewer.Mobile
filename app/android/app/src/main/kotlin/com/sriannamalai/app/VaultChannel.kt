@@ -110,10 +110,25 @@ class VaultChannel(private val activity: Activity, messenger: BinaryMessenger) :
       return
     }
 
-    activity.contentResolver.takePersistableUriPermission(
-      uri,
-      Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
-    )
+    // modeFlags here may ONLY be READ and/or WRITE — passing
+    // FLAG_GRANT_PERSISTABLE_URI_PERMISSION (an *intent* flag, 0x40) makes
+    // UriGrantsManagerService throw IllegalArgumentException ("Requested
+    // flags 0x41, but only 0x3 are allowed") and crashed the app on every
+    // real SAF pick (found in Task 8's device E2E on API 36; unit tests
+    // can't reach this platform call). PERSISTABLE belongs on the
+    // ACTION_OPEN_DOCUMENT_TREE intent above, and only there.
+    try {
+      activity.contentResolver.takePersistableUriPermission(
+        uri,
+        Intent.FLAG_GRANT_READ_URI_PERMISSION,
+      )
+    } catch (e: RuntimeException) {
+      // e.g. SecurityException when the provider didn't offer a persistable
+      // grant: surface a channel error (Dart's pickFolder throws, no vault
+      // change) instead of taking the whole activity down.
+      result.error("grant_failed", "could not persist read access: ${e.message}", null)
+      return
+    }
 
     val doc = DocumentFile.fromTreeUri(activity, uri)
     if (doc == null || !doc.isDirectory) {
