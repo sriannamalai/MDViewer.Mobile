@@ -227,6 +227,9 @@ void main() {
       await tester.tap(find.text('README.md'));
       await tester.pumpAndSettle();
 
+      // The tap pushes the Reader with no pre-read; ReaderScreen._load's
+      // own readDoc is what records the recent (the Search-side pre-read
+      // was dropped — it doubled every open and swallowed read errors).
       expect(vault.recents.single.relPath, 'README.md');
       expect(tester.takeException(), isNull);
 

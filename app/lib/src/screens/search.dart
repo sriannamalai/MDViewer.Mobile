@@ -12,9 +12,9 @@ import '../vault/search.dart';
 /// accent caret, ✕ clear, `accentLine`-bordered while focused), three
 /// filter-chip toggles (Aa case-sensitive / .* regex / Whole word), a count
 /// line, and result cards (filename + `L<line>`, a mono snippet with the
-/// match substring in `accent`). Tapping a result records it in Recents
-/// (via `VaultState.readDoc`, mirroring Library's own `_openFile`) and
-/// pushes the Reader scrolled to the match line.
+/// match substring in `accent`). Tapping a result pushes the Reader
+/// scrolled to the match line — the Reader's own load reads the document
+/// and records it in Recents (mirroring Library's `_openFile`).
 ///
 /// Searches every `.md` file across *both* vaults — the bundled Samples and
 /// the picked folder (if any) — regardless of which one is "active";
@@ -128,12 +128,13 @@ class _SearchScreenState extends State<SearchScreen> {
     setState(() => _result = result);
   }
 
-  Future<void> _openResult(SearchMatch match) async {
-    final vault = context.read<VaultState>();
-    await vault.readDoc(match.entry); // records recents immediately
-    if (!mounted) return;
-    await pushReader(context, match.entry, initialLine: match.line);
-  }
+  /// Pushes the Reader for [match] — no pre-read here. `ReaderScreen._load`
+  /// reads the document itself (recording it in Recents) and owns error
+  /// surfacing; a pre-read would double every open over the platform
+  /// channel and, if it threw, kill the tap handler unhandled before the
+  /// Reader's error UI could show it.
+  Future<void> _openResult(SearchMatch match) =>
+      pushReader(context, match.entry, initialLine: match.line);
 
   @override
   Widget build(BuildContext context) {

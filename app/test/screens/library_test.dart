@@ -234,16 +234,22 @@ void main() {
       await tester.tap(find.text('Welcome.md'));
       await tester.pumpAndSettle();
 
+      // The tap pushes the Reader with no pre-read; ReaderScreen._load's
+      // own readDoc is what records the recent (the Library-side pre-read
+      // was dropped — it doubled every open and swallowed read errors).
       expect(vault.recents.single.relPath, 'Welcome.md');
       // pushReader (navigation.dart) routes to the real ReaderScreen (Task
       // 5) — confirms the tap actually navigated, not just updated state.
-      // The Reader's own render call fails here (no FFI library reachable
-      // under `flutter test` — see renderer.dart's doc comment), which
-      // ReaderScreen surfaces as its error state rather than crashing; the
-      // header (filename) still renders regardless, which is what this
-      // test cares about.
+      // The Reader's own parse call fails here (no FFI library reachable
+      // under `flutter test` — see renderer.dart's doc comment) *after*
+      // its readDoc recorded the recent, and ReaderScreen surfaces that as
+      // its error state rather than crashing; the header (filename) still
+      // renders regardless, which is what this test cares about.
+      // (findsWidgets, not findsOneWidget: the Reader's bottom bar shows
+      // the filename too as its no-doc section-label fallback, now as its
+      // own exact Text since the label/percent split.)
       expect(tester.takeException(), isNull);
-      expect(find.text('Welcome.md'), findsOneWidget);
+      expect(find.text('Welcome.md'), findsWidgets);
     });
   });
 

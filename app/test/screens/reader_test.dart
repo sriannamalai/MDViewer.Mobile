@@ -51,6 +51,12 @@ class _FakeVaultProvider implements VaultProvider {
 /// simulator/host — not under this app's `flutter test`), so widget tests
 /// can exercise a *loaded* Reader deterministically and fast.
 class _FakeDocRenderer extends DocRenderer {
+  _FakeDocRenderer({this.headingText = 'Hello'});
+
+  /// The fixture's single H1 text — overridable so tests can exercise the
+  /// bottom bar's long-section-label ellipsis behavior.
+  final String headingText;
+
   int renderCalls = 0;
   Object? throwOnParse;
 
@@ -66,7 +72,7 @@ class _FakeDocRenderer extends DocRenderer {
           'level': 1,
           'span': {'startLine': 1},
           'children': [
-            {'kind': 'text', 'value': 'Hello'},
+            {'kind': 'text', 'value': headingText},
           ],
         },
         {
@@ -188,13 +194,16 @@ void main() {
     await tester.pumpAndSettle();
 
     // Before any scrollspy message: falls back to the first heading, 0%.
-    expect(find.textContaining('Hello · 0%'), findsOneWidget);
+    // The section label and the ' · N%' are two separate Texts (only the
+    // label may ellipsize — see _BottomBar).
+    expect(find.text('Hello'), findsOneWidget);
+    expect(find.text(' · 0%'), findsOneWidget);
 
     final controller = platform.controllers.single;
     controller.simulateMessage('ScrollSpy', '{"p": 0.42, "h": 1}');
     await tester.pump();
 
-    expect(find.textContaining('Hello · 42%'), findsOneWidget);
+    expect(find.text(' · 42%'), findsOneWidget);
 
     // The painted fill, not just the label: the accent bar must actually
     // have the hairline's full height and 42% of its width. (Regression:
@@ -240,7 +249,36 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.textContaining('Hello · 0%'), findsOneWidget);
+    expect(find.text('Hello'), findsOneWidget);
+    expect(find.text(' · 0%'), findsOneWidget);
+  });
+
+  testWidgets('the bottom bar percent survives a long section label', (
+    tester,
+  ) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    // Far wider than any phone: with the old single
+    // '$sectionLabel · $percent%' Text, tail ellipsis swallowed the
+    // percent entirely (found on-device).
+    final renderer = _FakeDocRenderer(
+      headingText: 'An extremely long section heading that cannot possibly '
+          'fit in the bottom bar next to the Outline pill and Aa button '
+          'without being ellipsized somewhere along the way',
+    );
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull, reason: 'no RenderFlex overflow');
+    // The percent is its own (never-ellipsized) Text, so it must render
+    // with real width no matter how long the section label is.
+    expect(find.text(' · 0%'), findsOneWidget);
+    expect(tester.getSize(find.text(' · 0%')).width, greaterThan(0));
   });
 
   testWidgets('navigation policy (Android): nothing navigates — '
@@ -466,7 +504,10 @@ void main() {
     );
     expect(find.textContaining('boom: parse failed'), findsOneWidget);
     // The header (back/share/filename) still works even in the error state.
-    expect(find.text('Welcome.md'), findsOneWidget);
+    // (findsWidgets: the bottom bar also shows the filename as its no-doc
+    // section-label fallback, its own exact Text since the label/percent
+    // split.)
+    expect(find.text('Welcome.md'), findsWidgets);
   });
 
   testWidgets(

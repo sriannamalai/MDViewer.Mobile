@@ -81,11 +81,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return "Couldn't add that folder. Try again.";
   }
 
-  Future<void> _openFile(VaultState vault, VaultEntry entry) async {
-    await vault.readDoc(entry);
-    if (!mounted) return;
-    await pushReader(context, entry);
-  }
+  /// Pushes the Reader for [entry] — no pre-read here. `ReaderScreen._load`
+  /// reads the document itself (recording it in Recents) and owns error
+  /// surfacing; a pre-read would double every open over the platform
+  /// channel and, if it threw (file vanished, unreadable SAF entry), kill
+  /// the tap handler unhandled before the Reader's error UI could show it.
+  Future<void> _openFile(VaultEntry entry) => pushReader(context, entry);
 
   @override
   Widget build(BuildContext context) {
@@ -124,7 +125,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       entries: vault.entries,
                       isExpanded: _isExpanded,
                       onToggle: _toggleExpanded,
-                      onTapFile: (entry) => _openFile(vault, entry),
+                      onTapFile: _openFile,
                       isActive: (entry) => _isActive(entry, mostRecent),
                     ),
                   _TreeSection(
@@ -133,7 +134,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     entries: vault.sampleEntries,
                     isExpanded: _isExpanded,
                     onToggle: _toggleExpanded,
-                    onTapFile: (entry) => _openFile(vault, entry),
+                    onTapFile: _openFile,
                     isActive: (entry) => _isActive(entry, mostRecent),
                   ),
                   if (vault.recents.isNotEmpty)
@@ -141,7 +142,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       recents: vault.recents,
                       vault: vault,
                       mostRecent: mostRecent,
-                      onTapFile: (entry) => _openFile(vault, entry),
+                      onTapFile: _openFile,
                     ),
                 ],
               ),

@@ -661,6 +661,11 @@ class _BottomBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = AppTokens.of(context);
     final bottomInset = MediaQuery.of(context).padding.bottom;
+    final metaStyle = TextStyle(
+      fontFamily: AppFonts.jetBrainsMono,
+      fontSize: AppTypeScale.readerSectionSize,
+      color: tokens.text3,
+    );
 
     return ClipRect(
       child: BackdropFilter(
@@ -687,16 +692,25 @@ class _BottomBar extends StatelessWidget {
               children: [
                 _OutlinePill(onTap: onOutlineTap),
                 const Spacer(),
+                // Two Texts, not one: only the section label may ellipsize.
+                // A single '$sectionLabel · $percent%' Text with tail
+                // ellipsis truncated the percent off entirely under a long
+                // section heading (found on-device) — the design shows the
+                // percent always visible ("Features · 34%").
                 Flexible(
-                  child: Text(
-                    '$sectionLabel · $percent%',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: AppFonts.jetBrainsMono,
-                      fontSize: AppTypeScale.readerSectionSize,
-                      color: tokens.text3,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          sectionLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: metaStyle,
+                        ),
+                      ),
+                      Text(' · $percent%', maxLines: 1, style: metaStyle),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 10),
