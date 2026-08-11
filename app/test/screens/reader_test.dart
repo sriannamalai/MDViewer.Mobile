@@ -10,6 +10,8 @@ import 'package:app/src/vault/vault_entry.dart';
 import 'package:app/src/vault/vault_grant.dart';
 import 'package:app/src/vault/vault_provider.dart';
 import 'package:app/src/vault/vault_source.dart';
+import 'package:flutter/foundation.dart'
+    show debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mdviewer/mdviewer.dart';
@@ -241,8 +243,8 @@ void main() {
     expect(find.textContaining('Hello · 0%'), findsOneWidget);
   });
 
-  testWidgets('navigation policy: only data: (and iOS about:blank) may '
-      'navigate; mailto:/tel:/about: are explicitly declined', (tester) async {
+  testWidgets('navigation policy (Android): nothing navigates — '
+      'data:/mailto:/tel:/about: are all explicitly declined', (tester) async {
     final entry = _sampleEntry();
     final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
     final appState = AppState();
@@ -259,8 +261,11 @@ void main() {
     Future<NavigationDecision> decision(String url) async =>
         await decide(NavigationRequest(url: url, isMainFrame: true));
 
-    // The rendered document's own load.
-    expect(await decision('data:text/html,x'), NavigationDecision.navigate);
+    // A data: request reaching the delegate is always a tapped link (the
+    // API-initiated load never routes through it here) — declined, so a
+    // `[open](data:text/html;base64,...)` doc link can't replace the
+    // rendered document with link-authored HTML.
+    expect(await decision('data:text/html,x'), NavigationDecision.prevent);
     // Explicit declines — a fall-through navigate here replaced the
     // document with a blank page on Android (Task 8 on-device finding).
     expect(await decision('mailto:a@b.c'), NavigationDecision.prevent);
@@ -272,6 +277,43 @@ void main() {
     expect(await decision('https://example.com'), NavigationDecision.prevent);
     // Internal relative links: prevented in the WebView (routed in-app).
     expect(await decision('Other.md'), NavigationDecision.prevent);
+  });
+
+  testWidgets('navigation policy (iOS): only the API load\'s own about:blank '
+      'navigates; other about:* and data: are declined', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    // Safety net if an expect throws mid-test (keeps later tests clean);
+    // the happy path must reset before the body ends — the binding checks
+    // foundation debug variables before tearDowns run.
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final decide =
+        platform.controllers.single.navigationDelegate!.onNavigationRequest!;
+    Future<NavigationDecision> decision(String url) async =>
+        await decide(NavigationRequest(url: url, isMainFrame: true));
+
+    // WKWebView surfaces loadHtmlString's own load as exactly about:blank.
+    expect(await decision('about:blank'), NavigationDecision.navigate);
+    // Any other about:* is a tapped doc link, not the API load — declined.
+    expect(await decision('about:config'), NavigationDecision.prevent);
+    // data: reaching the delegate is a tapped link on iOS too — declined.
+    expect(await decision('data:text/html,x'), NavigationDecision.prevent);
+    // The scheme-empty relative .md branch behaves the same as on Android:
+    // prevented in the WebView (routed in-app).
+    expect(await decision('Other.md'), NavigationDecision.prevent);
+
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets(

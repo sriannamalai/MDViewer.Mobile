@@ -244,28 +244,37 @@ class _ReaderScreenState extends State<ReaderScreen> {
       unawaited(_openExternal(uri));
       return NavigationDecision.prevent;
     }
-    if (uri.scheme.isEmpty && !request.url.startsWith('data:')) {
+    if (uri.scheme.isEmpty) {
       unawaited(_openInternalRelative(request.url));
       return NavigationDecision.prevent;
     }
-    // The rendered document itself (loadHtmlString surfaces as a data: URL
-    // where the platform routes API-initiated loads through the delegate).
-    if (uri.scheme == 'data') return NavigationDecision.navigate;
+    // A data: request reaching the delegate can only be a tapped link
+    // (e.g. `[open](data:text/html;base64,...)`), never the rendered
+    // document's own load: Android's WebView doesn't route API-initiated
+    // loads through shouldOverrideUrlLoading at all, and iOS WKWebView
+    // surfaces loadHtmlString's own load as about:blank. Allowing it let
+    // such a link replace the document with link-authored HTML inside the
+    // reader (on iOS) — decline instead.
+    if (uri.scheme == 'data') return NavigationDecision.prevent;
     // iOS WKWebView routes loadHtmlString's own load through the delegate
-    // as about:blank — allow it there. Android's WebView never sends
-    // API-initiated loads through shouldOverrideUrlLoading, so an about:*
-    // request there can only be a tapped relative link that Chromium
-    // collapsed against the null base URL — allowing it navigated the
-    // WebView to a literal blank page (found on-device in Task 8's E2E).
-    if (uri.scheme == 'about' &&
+    // as exactly `about:blank` — allow only that, only there. Any other
+    // about:* URL (e.g. a doc link like `[x](about:config)`) is a tapped
+    // link and falls through to the decline below. Android's WebView never
+    // sends API-initiated loads through shouldOverrideUrlLoading, so an
+    // about:* request there can only be a tapped relative link that
+    // Chromium collapsed against the null base URL — allowing it navigated
+    // the WebView to a literal blank page (found on-device in Task 8's
+    // E2E).
+    if (request.url == 'about:blank' &&
         defaultTargetPlatform != TargetPlatform.android) {
       return NavigationDecision.navigate;
     }
-    // Everything else — mailto:, tel:, file:, about: on Android, unknown
-    // schemes — is an explicit decline now, not a fall-through navigate
-    // (which could replace the document with a blank/error page). v1 scope:
-    // only web links (external) and vault-relative .md links (internal)
-    // actually go somewhere.
+    // Everything else — mailto:, tel:, file:, data:, about: on Android and
+    // non-blank about:* on iOS, unknown schemes — is an explicit decline
+    // now, not a fall-through navigate (which could replace the document
+    // with a blank/error/attacker-authored page). v1 scope: only web links
+    // (external) and vault-relative .md links (internal) actually go
+    // somewhere.
     return NavigationDecision.prevent;
   }
 
