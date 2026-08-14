@@ -6,14 +6,17 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:mdviewer/mdviewer.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../render/codecopy.dart';
+import '../render/engine_policy.dart';
 import '../render/renderer.dart';
 import '../render/resolver.dart';
 import '../render/scrollspy.dart';
@@ -121,6 +124,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
   String get _prefsKey =>
       'reader.scroll.${widget.entry.source.name}:${widget.entry.relPath}';
 
+  /// The engine-neutral top-line key (`reader.line.…`, engine_policy.dart)
+  /// BOTH engines write, so switching engines keeps your place. The native
+  /// engine restores from it; the webview keeps restoring by [_prefsKey]'s
+  /// progress float exactly as before.
+  String get _linePrefsKey =>
+      lineKey(widget.entry.source, widget.entry.relPath);
+
   @override
   void initState() {
     super.initState();
@@ -217,6 +227,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (payload == null) return;
     _docState?.applyScrollSpy(payload);
     unawaited(_persistScroll(payload.progress));
+    // Engine-neutral line persistence — the ONE additive webview-path
+    // change the v2 train makes: the payload already carries the line,
+    // so it rides the existing per-message cadence (the float write
+    // above is byte-for-byte unchanged). The native engine restores by
+    // this line (NativeReaderScroll), so a doc read under the webview
+    // engine reopens in place after an engine switch.
+    unawaited(_persistLine(payload.line));
   }
 
   /// The code-block Copy button's clipboard write. The message body IS the
@@ -231,6 +248,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Future<void> _persistScroll(double progress) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_prefsKey, progress);
+  }
+
+  Future<void> _persistLine(int line) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_linePrefsKey, line);
   }
 
   void _handlePageFinished(String url) {
@@ -406,13 +428,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
   void _openOutlineSheet() {
     final docState = _docState;
     if (docState == null) return;
-    OutlineSheet.show(
-      context,
-      docState: docState,
-      onTapHeading: (line) {
-        unawaited(_controller.runJavaScript(scrollToLineScript(line)));
-      },
-    );
+    OutlineSheet.show(context, docState: docState, onTapHeading: _jumpToLine);
+  }
+
+  /// The Reader's engine routing seam for a user-initiated jump-to-line
+  /// (outline tap): the webview engine runs the injected
+  /// `__mdvScrollToLine` script — VERBATIM v1 behavior. Task 5's engine
+  /// integration branches here for the native engine, to
+  /// [NativeReaderScroll.scrollToLine] (blockIndexForLine → an animated
+  /// `scrollTo`); the [OutlineSheet] itself is engine-agnostic and
+  /// unchanged.
+  void _jumpToLine(int line) {
+    unawaited(_controller.runJavaScript(scrollToLineScript(line)));
   }
 
   @override
@@ -824,6 +851,203 @@ class _AaButton extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// The native engine's Reader-side scroll plumbing — ONE instance per
+/// document, created alongside its [MdvTree] (Task 5's engine
+/// integration is the consumer; this class is the whole scroll contract
+/// it wires up).
+///
+/// Owns the [ItemScrollController]/[ItemPositionsListener] pair the
+/// Reader hands to `NativeDocView`, plus everything hanging off item
+/// positions:
+///
+/// - **Initial position** — [initialScrollIndex] maps a source line to
+///   its containing block's index BEFORE first paint (a one-shot
+///   [ReaderScreen.initialLine] beats the persisted line, mirroring the
+///   webview's priority; [persistedLine] reads the `reader.line.…` key
+///   defensively). The index feeds `NativeDocView.initialScrollIndex`,
+///   so restore lands as list construction — no post-frame jump flash.
+/// - **Outline taps** — [scrollToLine]: `blockIndexForLine` → a short
+///   animated `scrollTo` (the native half of the Reader's `_jumpToLine`
+///   engine seam).
+/// - **Scrollspy** — the positions listener finds the topmost visible
+///   item (MIN index with `itemTrailingEdge > 0`, matching the
+///   webview's reading-offset spirit — a `leadingEdge >= 0` rule would
+///   mispick under the list's 22px top padding), maps it through
+///   `startLineForIndex` (null — the trailing footnotes item — keeps
+///   the last line), and applies [ReaderDocState.applyScrollSpy] — the
+///   SAME payload type and state object the webview path feeds, reused
+///   verbatim, so hairline/section·%/outline-active-row light up
+///   identically on both engines.
+/// - **Progress** — `(topmostIndex + consumedFractionOfIt) / itemCount`,
+///   clamped to 0..1, where the consumed fraction is how much of the
+///   topmost item has scrolled above the viewport top. A BLOCK-WEIGHTED
+///   approximation by design (every block counts equally regardless of
+///   height): 0 exactly at the top, and it approaches 1 as the last
+///   item is consumed, but mid-document values weigh blocks, not
+///   pixels.
+/// - **Persistence** — throttled to at most one write per [throttle]
+///   (default 500ms), trailing-edge with the LATEST value; [dispose]
+///   flushes the pending value (a pop/kill right after scrolling must
+///   not lose the position) and cancels the timer. Each write persists
+///   BOTH the progress float (`reader.scroll.…`, the webview's restore
+///   key) and the top line (`reader.line.…`) — engine-neutral, so
+///   switching engines keeps your place.
+///
+/// [dispose] must be called when the document is torn down.
+class NativeReaderScroll {
+  NativeReaderScroll({
+    required MdvTree tree,
+    required this._docState,
+    required this._progressKey,
+    required this._lineKey,
+    this.throttle = const Duration(milliseconds: 500),
+    Future<void> Function(double progress, int line)? persist,
+    ItemPositionsListener? positionsListener,
+  }) : _adapter = MdvDocumentAdapter(tree),
+       _persistOverride = persist,
+       itemPositionsListener =
+           positionsListener ?? ItemPositionsListener.create() {
+    itemPositionsListener.itemPositions.addListener(_handlePositions);
+  }
+
+  /// Mapping-only adapter over the document's tree: [MdvDocumentAdapter.
+  /// blockIndexForLine]/[MdvDocumentAdapter.startLineForIndex]/
+  /// [MdvDocumentAdapter.itemCount] depend ONLY on the tree (spans), so
+  /// this instance never builds an item and needs no styling parameters —
+  /// `NativeDocView` constructs its own per-build adapter for rendering.
+  final MdvDocumentAdapter _adapter;
+
+  final ReaderDocState _docState;
+  final String _progressKey;
+  final String _lineKey;
+
+  /// Minimum spacing between persistence writes (test seam; production
+  /// uses the 500ms default).
+  final Duration throttle;
+
+  /// Test seam: replaces the SharedPreferences dual-key write. Null (the
+  /// Reader) writes [_progressKey] + [_lineKey].
+  final Future<void> Function(double progress, int line)? _persistOverride;
+
+  /// Scroll control for the hosted list (outline jump; the initial
+  /// position rides `initialScrollIndex` instead — never a post-frame
+  /// jump).
+  final ItemScrollController itemScrollController = ItemScrollController();
+
+  /// Position stream for the hosted list. Injectable for tests (driven
+  /// positions); the Reader uses the real one.
+  final ItemPositionsListener itemPositionsListener;
+
+  Timer? _throttleTimer;
+  double? _pendingProgress;
+  int? _pendingLine;
+
+  /// Reads the persisted engine-neutral line under [key] from [prefs]:
+  /// null when absent or not an int. Legacy installs carry ONLY the
+  /// `reader.scroll.…` float — that float must never be misread as a
+  /// line (this reads the line key alone), and a corrupt value under
+  /// the line key degrades to null (top start), never a throw.
+  static int? persistedLine(SharedPreferences prefs, String key) {
+    final raw = prefs.get(key);
+    return raw is int ? raw : null;
+  }
+
+  /// The list index the document should FIRST paint at: [initialLine]
+  /// (the one-shot search-result jump) beats [persistedLine] (the
+  /// restore), matching the webview path's priority; whichever wins is
+  /// mapped through `blockIndexForLine` (nearest preceding block). No
+  /// line, or a line no spanned block precedes (including a spanless
+  /// tree), → 0: top start.
+  int initialScrollIndex({
+    required int? initialLine,
+    required int? persistedLine,
+  }) {
+    final line = initialLine ?? persistedLine;
+    if (line == null) return 0;
+    return _adapter.blockIndexForLine(line) ?? 0;
+  }
+
+  /// User-initiated jump (outline tap): the block containing [line],
+  /// via a short animated scroll. No-ops when the line maps to no block
+  /// (see [initialScrollIndex]) or the controller isn't attached yet.
+  Future<void> scrollToLine(int line) async {
+    final index = _adapter.blockIndexForLine(line);
+    if (index == null || !itemScrollController.isAttached) return;
+    await itemScrollController.scrollTo(
+      index: index,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.ease,
+    );
+  }
+
+  void _handlePositions() {
+    final positions = itemPositionsListener.itemPositions.value;
+    // Pre-layout (or between-list) frames report no positions: keep the
+    // current state rather than snapping progress/line to zero.
+    if (positions.isEmpty) return;
+    final itemCount = _adapter.itemCount;
+    if (itemCount == 0) return;
+
+    ItemPosition? topmost;
+    for (final position in positions) {
+      // trailingEdge <= 0: fully scrolled past the viewport top.
+      if (position.itemTrailingEdge <= 0) continue;
+      if (topmost == null || position.index < topmost.index) topmost = position;
+    }
+    if (topmost == null) return;
+
+    final extent = topmost.itemTrailingEdge - topmost.itemLeadingEdge;
+    final double consumed = extent <= 0
+        ? 0
+        : ((-topmost.itemLeadingEdge) / extent).clamp(0.0, 1.0).toDouble();
+    final progress = ((topmost.index + consumed) / itemCount)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    // Null (the footnotes item / a spanless block) keeps the last known
+    // line — docState.activeLine IS the last applied line.
+    final line =
+        _adapter.startLineForIndex(topmost.index) ?? _docState.activeLine;
+
+    _docState.applyScrollSpy(ScrollSpyPayload(progress: progress, line: line));
+    _schedulePersist(progress, line);
+  }
+
+  void _schedulePersist(double progress, int line) {
+    _pendingProgress = progress;
+    _pendingLine = line;
+    // Trailing-edge throttle: the first update in a window arms the
+    // timer, later ones only refresh the pending (latest) value — one
+    // write per window.
+    _throttleTimer ??= Timer(throttle, () {
+      _throttleTimer = null;
+      unawaited(_flushPending());
+    });
+  }
+
+  Future<void> _flushPending() async {
+    final progress = _pendingProgress;
+    final line = _pendingLine;
+    _pendingProgress = null;
+    _pendingLine = null;
+    if (progress == null || line == null) return;
+    final override = _persistOverride;
+    if (override != null) return override(progress, line);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_progressKey, progress);
+    await prefs.setInt(_lineKey, line);
+  }
+
+  /// Detaches from the positions stream, cancels the throttle timer, and
+  /// flushes any pending write (the position must survive a pop/kill
+  /// right after the last scroll). Idempotent.
+  void dispose() {
+    itemPositionsListener.itemPositions.removeListener(_handlePositions);
+    _throttleTimer?.cancel();
+    _throttleTimer = null;
+    unawaited(_flushPending());
   }
 }
 

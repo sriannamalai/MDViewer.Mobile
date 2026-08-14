@@ -55,6 +55,7 @@ class NativeDocView extends StatefulWidget {
     required this.tree,
     required this.itemScrollController,
     required this.itemPositionsListener,
+    this.initialScrollIndex = 0,
     this.onLinkTap,
     this.imageProvider,
   });
@@ -68,6 +69,13 @@ class NativeDocView extends StatefulWidget {
 
   /// Reader-owned position stream (scrollspy / persistence).
   final ItemPositionsListener itemPositionsListener;
+
+  /// The item the list starts on — computed by the Reader BEFORE first
+  /// paint (`NativeReaderScroll.initialScrollIndex` maps the persisted
+  /// line / one-shot `initialLine` through `blockIndexForLine`), so a
+  /// position restore lands as list construction, never a post-frame
+  /// `jumpTo` flash of the document top. 0 (the default) is the top.
+  final int initialScrollIndex;
 
   /// Link taps, routed to the Reader's nav policy; null renders links
   /// styled but inert (blocked links are always inert, plugin-side).
@@ -102,6 +110,7 @@ class _NativeDocViewState extends State<NativeDocView> {
         itemBuilder: adapter.itemBuilder,
         itemScrollController: widget.itemScrollController,
         itemPositionsListener: widget.itemPositionsListener,
+        initialScrollIndex: widget.initialScrollIndex,
         padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
       ),
     );

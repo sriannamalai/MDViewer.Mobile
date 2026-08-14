@@ -671,4 +671,35 @@ void main() {
       expect(find.text('4 words · 1 min'), findsNothing);
     },
   );
+
+  testWidgets(
+    'a scrollspy message ALSO persists the engine-neutral line key alongside '
+    'the progress float (the native engine restores by that line)',
+    (tester) async {
+      final entry = _sampleEntry();
+      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+      final appState = AppState();
+      await appState.init();
+      final renderer = _FakeDocRenderer();
+
+      await tester.pumpWidget(
+        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = platform.controllers.single;
+      controller.simulateMessage('ScrollSpy', '{"p": 0.4, "h": 7}');
+      await tester.pump();
+      await tester.pump();
+
+      final prefs = await SharedPreferences.getInstance();
+      // The pre-existing per-message float write is byte-for-byte
+      // unchanged (cadence included)…
+      expect(prefs.getDouble('reader.scroll.sample:Welcome.md'), 0.4);
+      // …and the payload's line now rides alongside it under the
+      // engine-neutral key — the ONLY webview-path change this train
+      // makes.
+      expect(prefs.getInt('reader.line.sample:Welcome.md'), 7);
+    },
+  );
 }

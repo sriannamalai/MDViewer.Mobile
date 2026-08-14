@@ -109,3 +109,69 @@ Map<String, dynamic> fakeTreeWireMap() => <String, dynamic>{
 /// (strict decode), and tests running over this tree exercise exactly
 /// what a decoded tree carries.
 MdvTree fakeTreeFromWireMap() => MdvTree.fromMap(fakeTreeWireMap());
+
+/// Heading text of [fakeLongTree]'s H1 (block 0, line 1).
+const String fakeLongTreeHeadingText = 'Long native heading';
+
+/// The text of [fakeLongTree]'s paragraph at [blockIndex] (1-based over
+/// blocks — block 0 is the H1).
+String fakeLongTreeParagraphText(int blockIndex) =>
+    'Scroll paragraph $blockIndex — filler prose long enough to give the '
+    'block real height in a test viewport.';
+
+/// The 1-based source line block [blockIndex] of [fakeLongTree] starts
+/// on: blocks sit two lines apart (1, 3, 5, …), so every inter-block
+/// gap line exists for nearest-preceding-block mapping tests.
+int fakeLongTreeStartLine(int blockIndex) => 1 + 2 * blockIndex;
+
+/// A long scrollable document: an H1 (line 1) followed by [paragraphs]
+/// paragraphs at lines 3, 5, 7, … — enough vertical extent that a test
+/// viewport (800×600 default surface) genuinely scrolls. Spans follow
+/// [fakeLongTreeStartLine]; ids are unique per block.
+MdvTree fakeLongTree({int paragraphs = 39}) => MdvTree(
+  version: 1,
+  blocks: [
+    const MdvHeading(
+      id: 'long-h1',
+      span: MdvSpan(startLine: 1, endLine: 1, startOffset: 0, endOffset: 19),
+      level: 1,
+      anchorId: 'long-native-heading',
+      children: [MdvText(value: fakeLongTreeHeadingText)],
+    ),
+    for (var i = 1; i <= paragraphs; i++)
+      MdvParagraph(
+        id: 'long-p$i',
+        span: MdvSpan(
+          startLine: fakeLongTreeStartLine(i),
+          endLine: fakeLongTreeStartLine(i),
+          startOffset: 0,
+          endOffset: 0,
+        ),
+        children: [MdvText(value: fakeLongTreeParagraphText(i))],
+      ),
+  ],
+  footnotes: const [],
+);
+
+/// [fakeLongTree] plus one footnote definition, so the adapter appends
+/// its trailing footnotes item (`itemCount == blocks + 1`;
+/// `startLineForIndex` returns null for it — the scrollspy "line holds,
+/// progress keeps going" case).
+MdvTree fakeLongTreeWithFootnotes({int paragraphs = 8}) => MdvTree(
+  version: 1,
+  blocks: fakeLongTree(paragraphs: paragraphs).blocks,
+  footnotes: const [
+    MdvFootnoteDef(
+      id: 'long-fn1',
+      span: MdvSpan(startLine: 99, endLine: 99, startOffset: 0, endOffset: 0),
+      index: 1,
+      refCount: 1,
+      blocks: [
+        MdvParagraph(
+          id: 'long-fn1-p',
+          children: [MdvText(value: 'footnote body')],
+        ),
+      ],
+    ),
+  ],
+);

@@ -1,7 +1,13 @@
+import 'dart:async';
+
 import 'package:app/src/render/native_images.dart';
+import 'package:app/src/render/renderer.dart';
 import 'package:app/src/screens/native_doc_view.dart';
+import 'package:app/src/screens/reader.dart';
 import 'package:app/src/state/app_state.dart';
+import 'package:app/src/state/doc_state.dart';
 import 'package:app/src/tokens.dart';
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mdviewer/mdviewer.dart';
@@ -271,4 +277,469 @@ void main() {
     expect(find.byType(MdvCopyButton), findsOneWidget);
     expect(find.text('Copy'), findsOneWidget);
   });
+
+  // ── NativeReaderScroll (plan Task 4): the Reader-side scroll plumbing,
+  // exercised here against the REAL ScrollablePositionedList in the test
+  // viewport (the Reader's engine integration that wires it in is Task 5).
+
+  testWidgets('outline tap: scrollToLine maps the line through '
+      'blockIndexForLine (nearest preceding block) and lands on that '
+      'block', (tester) async {
+    final appState = await _appState();
+    final tree = fakeLongTree();
+    final docState = ReaderDocState(model: DocModel.empty);
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: docState,
+      progressKey: 'reader.scroll.sample:Long.md',
+      lineKey: 'reader.line.sample:Long.md',
+    );
+    await _pumpScrollHost(tester, appState, tree, scroll);
+
+    // Deep enough that the target item is not even built yet.
+    expect(find.text(fakeLongTreeParagraphText(30)), findsNothing);
+
+    // One line PAST block 30's start line: the gap line between blocks
+    // resolves to the nearest preceding block — same rule as the
+    // webview's __mdvScrollToLine fallback.
+    unawaited(scroll.scrollToLine(fakeLongTreeStartLine(30) + 1));
+    await tester.pumpAndSettle();
+
+    expect(find.text(fakeLongTreeParagraphText(30)), findsOneWidget);
+    final target = scroll.itemPositionsListener.itemPositions.value.singleWhere(
+      (position) => position.index == 30,
+    );
+    expect(
+      target.itemLeadingEdge,
+      closeTo(0, 0.01),
+      reason: 'the animated scroll aligns the mapped block to the top',
+    );
+
+    scroll.dispose();
+  });
+
+  testWidgets('scrollToLine guards: a detached controller and an unmapped '
+      'line are both no-ops', (tester) async {
+    final appState = await _appState();
+    final tree = fakeLongTree();
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: ReaderDocState(model: DocModel.empty),
+      progressKey: 'reader.scroll.sample:Long.md',
+      lineKey: 'reader.line.sample:Long.md',
+    );
+
+    // Not attached to any list yet: returns without throwing.
+    await scroll.scrollToLine(5);
+
+    await _pumpScrollHost(tester, appState, tree, scroll);
+
+    // Line 0 precedes every block: blockIndexForLine → null → no scroll.
+    unawaited(scroll.scrollToLine(0));
+    await tester.pumpAndSettle();
+
+    expect(_topmostVisibleIndex(scroll), 0);
+    expect(tester.takeException(), isNull);
+
+    scroll.dispose();
+  });
+
+  testWidgets('initial position: a persisted line maps to its block index '
+      'BEFORE first paint (initialScrollIndex, no post-frame jump)', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'reader.line.sample:Long.md': fakeLongTreeStartLine(30),
+    });
+    final appState = await _appState();
+    final tree = fakeLongTree();
+    final docState = ReaderDocState(model: DocModel.empty);
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: docState,
+      progressKey: 'reader.scroll.sample:Long.md',
+      lineKey: 'reader.line.sample:Long.md',
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    final persisted = NativeReaderScroll.persistedLine(
+      prefs,
+      'reader.line.sample:Long.md',
+    );
+    expect(persisted, fakeLongTreeStartLine(30));
+
+    final index = scroll.initialScrollIndex(
+      initialLine: null,
+      persistedLine: persisted,
+    );
+    expect(index, 30);
+
+    await _pumpScrollHost(
+      tester,
+      appState,
+      tree,
+      scroll,
+      initialScrollIndex: index,
+    );
+
+    expect(find.text(fakeLongTreeParagraphText(30)), findsOneWidget);
+    final target = scroll.itemPositionsListener.itemPositions.value.singleWhere(
+      (position) => position.index == 30,
+    );
+    expect(target.itemLeadingEdge, closeTo(0, 0.01));
+
+    scroll.dispose();
+  });
+
+  testWidgets('initial position: a one-shot initialLine beats the persisted '
+      'line for this load', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'reader.line.sample:Long.md': fakeLongTreeStartLine(30),
+    });
+    final appState = await _appState();
+    final tree = fakeLongTree();
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: ReaderDocState(model: DocModel.empty),
+      progressKey: 'reader.scroll.sample:Long.md',
+      lineKey: 'reader.line.sample:Long.md',
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    final index = scroll.initialScrollIndex(
+      initialLine: fakeLongTreeStartLine(12),
+      persistedLine: NativeReaderScroll.persistedLine(
+        prefs,
+        'reader.line.sample:Long.md',
+      ),
+    );
+    expect(index, 12, reason: 'a search-result jump wins over the restore');
+
+    await _pumpScrollHost(
+      tester,
+      appState,
+      tree,
+      scroll,
+      initialScrollIndex: index,
+    );
+
+    expect(find.text(fakeLongTreeParagraphText(12)), findsOneWidget);
+    final target = scroll.itemPositionsListener.itemPositions.value.singleWhere(
+      (position) => position.index == 12,
+    );
+    expect(target.itemLeadingEdge, closeTo(0, 0.01));
+
+    scroll.dispose();
+  });
+
+  testWidgets('legacy float-only prefs start at top: the progress float is '
+      'NEVER misread as a line, a corrupt line value degrades to null, '
+      'and an unmappable line degrades to index 0', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      // A v1 install: only the webview progress float exists.
+      'reader.scroll.sample:Long.md': 0.77,
+      // A corrupt line key: a double where an int belongs.
+      'reader.line.sample:Corrupt.md': 0.5,
+    });
+    final appState = await _appState();
+    final tree = fakeLongTree();
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: ReaderDocState(model: DocModel.empty),
+      progressKey: 'reader.scroll.sample:Long.md',
+      lineKey: 'reader.line.sample:Long.md',
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      NativeReaderScroll.persistedLine(prefs, 'reader.line.sample:Long.md'),
+      isNull,
+      reason: 'absent line key: the 0.77 float must not be read as a line',
+    );
+    expect(
+      NativeReaderScroll.persistedLine(prefs, 'reader.line.sample:Corrupt.md'),
+      isNull,
+      reason: 'a non-int value under the line key degrades to null',
+    );
+
+    expect(
+      scroll.initialScrollIndex(initialLine: null, persistedLine: null),
+      0,
+    );
+    // A line no block precedes (the webview writes h:0 before any heading
+    // has scrolled past): blockIndexForLine → null → top.
+    expect(scroll.initialScrollIndex(initialLine: null, persistedLine: 0), 0);
+
+    await _pumpScrollHost(tester, appState, tree, scroll);
+
+    expect(_topmostVisibleIndex(scroll), 0);
+    expect(find.text(fakeLongTreeHeadingText), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    scroll.dispose();
+  });
+
+  testWidgets('item positions drive docState: topmost visible is the MIN '
+      'index with itemTrailingEdge > 0 — top padding offsets and '
+      'scrolled-past items never pick the wrong block', (tester) async {
+    final tree = fakeLongTree(paragraphs: 9); // itemCount 10
+    final docState = ReaderDocState(model: DocModel.empty);
+    final listener = _DrivenPositionsListener();
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: docState,
+      progressKey: 'reader.scroll.sample:Long.md',
+      lineKey: 'reader.line.sample:Long.md',
+      positionsListener: listener,
+      persist: (_, _) async {},
+    );
+
+    // Pre-layout frame: no positions → a no-op, not a crash.
+    listener.drive(const []);
+    expect(docState.progress, 0);
+    expect(docState.activeLine, 0);
+
+    // At the very top the 22px page padding puts item 0's leading edge
+    // BELOW the viewport top (positive) — a naive `leadingEdge >= 0 is
+    // the topmost` rule survives here, so pin the real rule's output:
+    // item 0 topmost, progress exactly 0.
+    listener.drive(const [
+      ItemPosition(index: 0, itemLeadingEdge: 0.036, itemTrailingEdge: 0.2),
+      ItemPosition(index: 1, itemLeadingEdge: 0.2, itemTrailingEdge: 0.5),
+    ]);
+    expect(docState.activeLine, fakeLongTreeStartLine(0));
+    expect(docState.progress, 0);
+
+    // Mid-document: item 3 fully scrolled past (trailing edge <= 0) is
+    // EXCLUDED; item 4, a quarter scrolled past, is the topmost.
+    listener.drive(const [
+      ItemPosition(index: 3, itemLeadingEdge: -0.4, itemTrailingEdge: 0.0),
+      ItemPosition(index: 4, itemLeadingEdge: -0.25, itemTrailingEdge: 0.75),
+      ItemPosition(index: 5, itemLeadingEdge: 0.75, itemTrailingEdge: 1.1),
+    ]);
+    expect(docState.activeLine, fakeLongTreeStartLine(4));
+    // (index 4 + 0.25 of it consumed) / 10 items.
+    expect(docState.progress, closeTo(0.425, 1e-9));
+
+    // An empty positions frame mid-flight keeps the last state.
+    listener.drive(const []);
+    expect(docState.activeLine, fakeLongTreeStartLine(4));
+    expect(docState.progress, closeTo(0.425, 1e-9));
+
+    scroll.dispose();
+  });
+
+  testWidgets('the trailing footnotes item holds the last line (null line '
+      'mapping) while progress keeps approaching 1', (tester) async {
+    final tree = fakeLongTreeWithFootnotes(paragraphs: 8); // itemCount 10
+    final docState = ReaderDocState(model: DocModel.empty);
+    final listener = _DrivenPositionsListener();
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: docState,
+      progressKey: 'reader.scroll.sample:Long.md',
+      lineKey: 'reader.line.sample:Long.md',
+      positionsListener: listener,
+      persist: (_, _) async {},
+    );
+
+    // Reading the last body block…
+    listener.drive(const [
+      ItemPosition(index: 8, itemLeadingEdge: -0.1, itemTrailingEdge: 0.6),
+      ItemPosition(index: 9, itemLeadingEdge: 0.6, itemTrailingEdge: 1.2),
+    ]);
+    expect(docState.activeLine, fakeLongTreeStartLine(8));
+
+    // …then the footnotes item (index 9 = blocks.length) becomes topmost:
+    // startLineForIndex → null → the line HOLDS; progress keeps going.
+    listener.drive(const [
+      ItemPosition(index: 9, itemLeadingEdge: -0.8, itemTrailingEdge: 1.0),
+    ]);
+    expect(
+      docState.activeLine,
+      fakeLongTreeStartLine(8),
+      reason: 'a null line mapping keeps the last known line',
+    );
+    expect(docState.progress, closeTo((9 + 0.8 / 1.8) / 10, 1e-9));
+    expect(docState.progress, greaterThan(0.9));
+
+    scroll.dispose();
+  });
+
+  testWidgets('an empty tree (itemCount 0) and a zero-extent position are '
+      'no-ops — never a divide-by-zero', (tester) async {
+    const empty = MdvTree(version: 1, blocks: [], footnotes: []);
+    final emptyDocState = ReaderDocState(model: DocModel.empty);
+    final emptyListener = _DrivenPositionsListener();
+    final emptyScroll = NativeReaderScroll(
+      tree: empty,
+      docState: emptyDocState,
+      progressKey: 'reader.scroll.sample:Empty.md',
+      lineKey: 'reader.line.sample:Empty.md',
+      positionsListener: emptyListener,
+      persist: (_, _) async {},
+    );
+    // A position report against an empty tree (cannot happen through the
+    // real list, but the guard must hold): ignored.
+    emptyListener.drive(const [
+      ItemPosition(index: 0, itemLeadingEdge: 0, itemTrailingEdge: 0.1),
+    ]);
+    expect(emptyDocState.progress, 0);
+    expect(emptyDocState.activeLine, 0);
+    emptyScroll.dispose();
+
+    // itemCount 1 with a zero-extent position (trailing == leading):
+    // the consumed-fraction division is guarded.
+    final one = fakeLongTree(paragraphs: 0);
+    final oneDocState = ReaderDocState(model: DocModel.empty);
+    final oneListener = _DrivenPositionsListener();
+    final oneScroll = NativeReaderScroll(
+      tree: one,
+      docState: oneDocState,
+      progressKey: 'reader.scroll.sample:One.md',
+      lineKey: 'reader.line.sample:One.md',
+      positionsListener: oneListener,
+      persist: (_, _) async {},
+    );
+    oneListener.drive(const [
+      ItemPosition(index: 0, itemLeadingEdge: 0.3, itemTrailingEdge: 0.3),
+    ]);
+    expect(oneDocState.activeLine, fakeLongTreeStartLine(0));
+    expect(oneDocState.progress, 0);
+    expect(tester.takeException(), isNull);
+    oneScroll.dispose();
+  });
+
+  testWidgets('persistence is throttled to one write per 500ms carrying the '
+      'LATEST value; dispose flushes the pending value and cancels the '
+      'timer', (tester) async {
+    final tree = fakeLongTree(paragraphs: 9);
+    final writes = <(double, int)>[];
+    final listener = _DrivenPositionsListener();
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: ReaderDocState(model: DocModel.empty),
+      progressKey: 'reader.scroll.sample:Long.md',
+      lineKey: 'reader.line.sample:Long.md',
+      positionsListener: listener,
+      persist: (progress, line) async => writes.add((progress, line)),
+    );
+
+    // Two updates inside the 500ms window…
+    listener.drive(const [
+      ItemPosition(index: 2, itemLeadingEdge: 0, itemTrailingEdge: 0.5),
+    ]);
+    listener.drive(const [
+      ItemPosition(index: 5, itemLeadingEdge: 0, itemTrailingEdge: 0.5),
+    ]);
+    expect(writes, isEmpty, reason: 'nothing is written inside the window');
+
+    await tester.pump(const Duration(milliseconds: 499));
+    expect(writes, isEmpty);
+    await tester.pump(const Duration(milliseconds: 1));
+
+    // …collapse to ONE write carrying the latest value.
+    expect(writes, hasLength(1));
+    expect(writes.single.$1, closeTo(0.5, 1e-9));
+    expect(writes.single.$2, fakeLongTreeStartLine(5));
+
+    // A further update, then dispose before the window elapses: the
+    // pending value is flushed (backgrounded/killed right after
+    // scrolling must not lose the position) and the timer is cancelled
+    // (the test binding fails on any timer left pending).
+    listener.drive(const [
+      ItemPosition(index: 7, itemLeadingEdge: 0, itemTrailingEdge: 0.5),
+    ]);
+    scroll.dispose();
+    await tester.pump();
+
+    expect(writes, hasLength(2));
+    expect(writes.last.$2, fakeLongTreeStartLine(7));
+  });
+
+  testWidgets('the native persist path writes BOTH the progress float and '
+      'the engine-neutral line key', (tester) async {
+    final tree = fakeLongTree(paragraphs: 9);
+    final listener = _DrivenPositionsListener();
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: ReaderDocState(model: DocModel.empty),
+      progressKey: 'reader.scroll.sample:Long.md',
+      lineKey: 'reader.line.sample:Long.md',
+      positionsListener: listener,
+    );
+
+    listener.drive(const [
+      ItemPosition(index: 4, itemLeadingEdge: -0.25, itemTrailingEdge: 0.75),
+    ]);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getDouble('reader.scroll.sample:Long.md'),
+      closeTo(0.425, 1e-9),
+    );
+    expect(
+      prefs.getInt('reader.line.sample:Long.md'),
+      fakeLongTreeStartLine(4),
+    );
+
+    scroll.dispose();
+  });
+}
+
+/// [ItemPositionsListener] the tests drive by hand — exact edge values
+/// for the padding/exclusion/footnotes cases without fighting real
+/// scroll physics (the real-list tests above cover the wired path).
+class _DrivenPositionsListener implements ItemPositionsListener {
+  final ValueNotifier<Iterable<ItemPosition>> _positions = ValueNotifier(
+    const <ItemPosition>[],
+  );
+
+  @override
+  ValueListenable<Iterable<ItemPosition>> get itemPositions => _positions;
+
+  void drive(Iterable<ItemPosition> positions) => _positions.value = positions;
+}
+
+/// Pumps a [NativeDocView] wired the way Task 5's Reader will wire it:
+/// the [NativeReaderScroll]'s controller/listener pair plus the
+/// pre-paint [initialScrollIndex].
+Future<void> _pumpScrollHost(
+  WidgetTester tester,
+  AppState appState,
+  MdvTree tree,
+  NativeReaderScroll scroll, {
+  int initialScrollIndex = 0,
+}) async {
+  await tester.pumpWidget(
+    ChangeNotifierProvider<AppState>.value(
+      value: appState,
+      child: MaterialApp(
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        home: Scaffold(
+          body: NativeDocView(
+            tree: tree,
+            itemScrollController: scroll.itemScrollController,
+            itemPositionsListener: scroll.itemPositionsListener,
+            initialScrollIndex: initialScrollIndex,
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+/// The min index with `itemTrailingEdge > 0` — the same topmost-visible
+/// rule NativeReaderScroll applies, read from the real list's positions.
+int _topmostVisibleIndex(NativeReaderScroll scroll) {
+  final visible = scroll.itemPositionsListener.itemPositions.value
+      .where((position) => position.itemTrailingEdge > 0)
+      .map((position) => position.index)
+      .toList();
+  expect(visible, isNotEmpty);
+  return visible.reduce((a, b) => a < b ? a : b);
 }
