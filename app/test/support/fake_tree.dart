@@ -1,4 +1,5 @@
-/// Shared canned [MdvTree] fixtures for native-engine tests
+/// Shared canned [MdvTree] fixtures (plus the renderer fakes that serve
+/// them, and canned themed palettes) for native-engine tests
 /// (`native_doc_view_test.dart` now; the Reader's native-path tests in
 /// later tasks) — the typed-tree analogue of `reader_test.dart`'s
 /// `_FakeDocRenderer` parse fixture.
@@ -14,7 +15,7 @@
 /// see renderer.dart's [DocRenderer] doc comment.)
 library;
 
-import 'dart:ui' show Brightness;
+import 'dart:ui' show Brightness, Color;
 
 import 'package:app/src/render/renderer.dart';
 import 'package:mdviewer/mdviewer.dart';
@@ -306,5 +307,60 @@ class FakeTreeDocRenderer extends DocRenderer {
     renderCalls++;
     lastResolver = resolver;
     return '<html><body><h1 data-md-line="1">Hello</h1></body></html>';
+  }
+}
+
+/// The canned LIGHT palette [FakePaletteTreeDocRenderer] loads — a
+/// LOADED palette, i.e. one carrying `tokenColors` (the whole point of
+/// the load: `MdvPalette.light`'s are empty). Deliberately distinct from
+/// [fakeDarkPalette] in every field so a test can tell which one the
+/// Reader handed the native view.
+const MdvPalette fakeLightPalette = MdvPalette(
+  brightness: Brightness.light,
+  background: Color(0xFFFFFFFF),
+  foreground: Color(0xFF111111),
+  accent: Color(0xFF0000EE),
+  border: Color(0xFFCCCCCC),
+  codeBackground: Color(0xFFF0F0F0),
+  quoteForeground: Color(0xFF666666),
+  tokenColors: {fakeCodeRunTokenType: Color(0xFFAA0000)},
+);
+
+/// The canned DARK palette — [fakeLightPalette]'s counterpart.
+const MdvPalette fakeDarkPalette = MdvPalette(
+  brightness: Brightness.dark,
+  background: Color(0xFF000000),
+  foreground: Color(0xFFEEEEEE),
+  accent: Color(0xFF4493F8),
+  border: Color(0xFF333333),
+  codeBackground: Color(0xFF161616),
+  quoteForeground: Color(0xFF999999),
+  tokenColors: {fakeCodeRunTokenType: Color(0xFF00AA00)},
+);
+
+/// [FakeTreeDocRenderer] with the PALETTE seam canned too: the real
+/// [DocRenderer.loadPalette] goes through the FFI asset call, so on a
+/// widget-test host it throws and `NativePalettes.ensureLoaded` degrades
+/// to null — which is exactly the shape that let the shipped defect hide
+/// (a Reader handing `palette: null` to the native view looks identical
+/// to a Reader that never wires the palette at all). This fake returns
+/// [fakeLightPalette]/[fakeDarkPalette] instead, so a reader-level test
+/// can assert WHICH palette reaches `NativeDocView` for the ambient
+/// brightness.
+///
+/// Tests using it must reset `NativePalettes`' process-wide cache
+/// (`resetCacheForTest`), since a successful load here caches for the
+/// rest of the process.
+class FakePaletteTreeDocRenderer extends FakeTreeDocRenderer {
+  FakePaletteTreeDocRenderer({super.tree});
+
+  /// The `dark:` argument of every [loadPalette] call, in order — pins
+  /// that both modes load up front (a theme flip must never await).
+  final List<bool> paletteCalls = <bool>[];
+
+  @override
+  Future<MdvPalette> loadPalette({required bool dark}) async {
+    paletteCalls.add(dark);
+    return dark ? fakeDarkPalette : fakeLightPalette;
   }
 }

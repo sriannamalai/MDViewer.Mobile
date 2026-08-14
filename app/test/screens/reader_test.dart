@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:app/src/render/native_palette.dart';
 import 'package:app/src/render/renderer.dart';
 import 'package:app/src/screens/native_doc_view.dart';
 import 'package:app/src/screens/reader.dart';
@@ -160,6 +161,14 @@ void main() {
     WebViewPlatform.instance = platform;
     SharedPreferences.setMockInitialValues({});
   });
+
+  // NativePalettes caches BOTH palettes process-wide on the first
+  // successful load (native_palette.dart's class doc), so the one test
+  // below that actually succeeds at loading would otherwise leak its
+  // fixtures into every later test in this file. Registered separately
+  // from the setUp above so that block stays byte-untouched.
+  setUp(NativePalettes.resetCacheForTest);
+  tearDown(NativePalettes.resetCacheForTest);
 
   testWidgets('loads, renders once, shows filename + vault·minutes meta', (
     tester,
@@ -1207,5 +1216,60 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byType(ReaderScreen, skipOffstage: false), findsOneWidget);
+  });
+
+  testWidgets('the native view gets the LOADED palette for the ambient '
+      'brightness, and a theme flip swaps it in place — no reload, no '
+      'renderTree, no await', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakePaletteTreeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final before = tester.widget<NativeDocView>(find.byType(NativeDocView));
+    expect(
+      before.palette,
+      same(fakeLightPalette),
+      reason:
+          'the palette LOADED for the ambient brightness must reach the '
+          'native view; a null here is exactly the shipped defect — the '
+          'adapter then falls back to MdvPalette.light, whose tokenColors '
+          'are empty, and every code fence renders flat',
+    );
+    expect(renderer.paletteCalls, [
+      false,
+      true,
+    ], reason: 'both modes load once, before the first native paint');
+
+    // Theme flip via the platform brightness (themeMode is system) — the
+    // same control the Aa/theme restyle-in-place test drives.
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    await tester.pumpAndSettle();
+
+    final after = tester.widget<NativeDocView>(find.byType(NativeDocView));
+    expect(
+      after.palette,
+      same(fakeDarkPalette),
+      reason: 'the build-time pick follows the ambient brightness',
+    );
+    expect(
+      identical(after.tree, before.tree),
+      isTrue,
+      reason:
+          'the T3 contract: the flip restyles in place with the CORRECT '
+          'palette — no rebuilt tree behind it',
+    );
+    expect(renderer.renderTreeCalls, 1);
+    expect(renderer.paletteCalls, [
+      false,
+      true,
+    ], reason: 'the cached pair serves the flip — no async gap mid-flip');
   });
 }

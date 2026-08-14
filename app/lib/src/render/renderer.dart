@@ -230,6 +230,8 @@ class DocRenderer {
   /// `MdvDocumentAdapter.blockIndexForLine` needs them; a spanless tree
   /// (never produced by this pipeline) would return null there and the
   /// native view degrades to a top start.
+  MdvTree renderTree(Object doc) => _mdv.renderTreeDoc(doc);
+
   /// Loads the library's themed palette (`theme-<mode>.json` +
   /// `highlight-<mode>.json`) for the native engine — the source of the
   /// syntax-highlight token colors `MdvDocumentAdapter`'s baked-in
@@ -241,8 +243,6 @@ class DocRenderer {
   /// without touching the lazily-resolved [_mdv].
   Future<MdvPalette> loadPalette({required bool dark}) =>
       MdvPalette.load(dark: dark, mdviewer: _mdv);
-
-  MdvTree renderTree(Object doc) => _mdv.renderTreeDoc(doc);
 
   /// Re-renders [doc] (a previously [parse]d document — `Map` or JSON
   /// `String`) themed for [brightness] at [textScale], resolving images via
