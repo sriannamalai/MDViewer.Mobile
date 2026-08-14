@@ -49,7 +49,7 @@ import '../state/app_state.dart';
 /// Padding: the host owns the scrollable's outer padding
 /// (`EdgeInsets.fromLTRB(20, 22, 20, 22)`), mirroring the webview CSS's
 /// `22px 20px` page padding.
-class NativeDocView extends StatefulWidget {
+class NativeDocView extends StatelessWidget {
   const NativeDocView({
     super.key,
     required this.tree,
@@ -86,21 +86,22 @@ class NativeDocView extends StatefulWidget {
   /// re-resolves whenever this compares unequal across builds.
   final MdvImageResolver? imageProvider;
 
-  @override
-  State<NativeDocView> createState() => _NativeDocViewState();
-}
-
-class _NativeDocViewState extends State<NativeDocView> {
+  // Stateless by design: every field is host-owned (the Reader holds the
+  // tree, controller/listener, resolver), and the per-build adapter is
+  // the styling mechanism — there is nothing to keep in State. (Task 4's
+  // scaffolding briefly made this a field-less StatefulWidget; flattened
+  // per the ledger's routed minor once Task 5 confirmed no state
+  // arrived.)
   @override
   Widget build(BuildContext context) {
     final textScale = context.watch<AppState>().textScale;
     final adapter = MdvDocumentAdapter(
-      widget.tree,
+      tree,
       // palette stays null: resolved from the ambient Theme's brightness
       // at item-build time, so a theme flip recolors without a new tree.
       baseStyle: TextStyle(fontSize: 16 * textScale),
-      onLinkTap: widget.onLinkTap,
-      imageProvider: widget.imageProvider,
+      onLinkTap: onLinkTap,
+      imageProvider: imageProvider,
       selectable: true,
     );
     return adapter.wrap(
@@ -108,9 +109,9 @@ class _NativeDocViewState extends State<NativeDocView> {
       ScrollablePositionedList.builder(
         itemCount: adapter.itemCount,
         itemBuilder: adapter.itemBuilder,
-        itemScrollController: widget.itemScrollController,
-        itemPositionsListener: widget.itemPositionsListener,
-        initialScrollIndex: widget.initialScrollIndex,
+        itemScrollController: itemScrollController,
+        itemPositionsListener: itemPositionsListener,
+        initialScrollIndex: initialScrollIndex,
         padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
       ),
     );

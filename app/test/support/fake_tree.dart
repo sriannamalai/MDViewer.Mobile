@@ -14,6 +14,9 @@
 /// see renderer.dart's [DocRenderer] doc comment.)
 library;
 
+import 'dart:ui' show Brightness;
+
+import 'package:app/src/render/renderer.dart';
 import 'package:mdviewer/mdviewer.dart';
 
 /// Heading text of the canned document's single H1.
@@ -153,6 +156,23 @@ MdvTree fakeLongTree({int paragraphs = 39}) => MdvTree(
   footnotes: const [],
 );
 
+/// [fakeTree] plus a trailing mermaid diagram block — the
+/// `treeContainsMermaid` auto-webview trigger for engine-policy reader
+/// tests.
+MdvTree fakeMermaidTree() => MdvTree(
+  version: 1,
+  blocks: [
+    ...fakeTree().blocks,
+    const MdvDiagram(
+      id: 'fixture-d1',
+      span: MdvSpan(startLine: 9, endLine: 11, startOffset: 63, endOffset: 95),
+      source: 'graph TD; A-->B',
+      engine: 'mermaid',
+    ),
+  ],
+  footnotes: const [],
+);
+
 /// [fakeLongTree] plus one footnote definition, so the adapter appends
 /// its trailing footnotes item (`itemCount == blocks + 1`;
 /// `startLineForIndex` returns null for it — the scrollspy "line holds,
@@ -175,3 +195,85 @@ MdvTree fakeLongTreeWithFootnotes({int paragraphs = 8}) => MdvTree(
     ),
   ],
 );
+
+/// The v2 native-path extension of `reader_test.dart`'s in-file
+/// `_FakeDocRenderer` (which may NOT change, and deliberately does NOT
+/// override [DocRenderer.renderTree] — the inherited real one throws on
+/// a host with no FFI library, exercising the Reader's
+/// renderTree-failure → webview fallback under every pre-existing
+/// webview test, byte-untouched). THIS fake overrides [renderTree] with
+/// a canned typed tree (and counts calls), so tests can put the Reader
+/// on the native engine — and prove renderTree runs at most once per
+/// document across Aa steps, theme flips, and engine switches.
+class FakeTreeDocRenderer extends DocRenderer {
+  FakeTreeDocRenderer({MdvTree Function() tree = fakeTree, this._parseChildren})
+    : _treeBuilder = tree;
+
+  final MdvTree Function() _treeBuilder;
+
+  /// Overrides the parse fixture's `children` array (e.g. to give the
+  /// outline a deep heading whose line matches a [fakeLongTree] block).
+  /// Null keeps `_FakeDocRenderer`'s H1-"Hello" + paragraph shape.
+  final List<Map<String, dynamic>>? _parseChildren;
+
+  int parseCalls = 0;
+  int renderCalls = 0;
+  int renderTreeCalls = 0;
+
+  /// Non-null makes [renderTree] throw it — the fallback-posture tests'
+  /// hook (a real `renderTreeDoc` failure can be anything, so the
+  /// Reader must catch broadly).
+  Object? throwOnRenderTree;
+
+  /// The resolver the most recent [render] call received (mirrors
+  /// `_FakeDocRenderer.lastResolver`).
+  MdvResolver? lastResolver;
+
+  @override
+  Map<String, dynamic> parse(String markdown) {
+    parseCalls++;
+    return {
+      'version': 1,
+      'kind': 'document',
+      'children':
+          _parseChildren ??
+          [
+            {
+              'kind': 'heading',
+              'level': 1,
+              'span': {'startLine': 1},
+              'children': [
+                {'kind': 'text', 'value': 'Hello'},
+              ],
+            },
+            {
+              'kind': 'paragraph',
+              'span': {'startLine': 3},
+              'children': [
+                {'kind': 'text', 'value': 'one two three'},
+              ],
+            },
+          ],
+    };
+  }
+
+  @override
+  MdvTree renderTree(Object doc) {
+    renderTreeCalls++;
+    final error = throwOnRenderTree;
+    if (error != null) throw error;
+    return _treeBuilder();
+  }
+
+  @override
+  String render(
+    Object doc, {
+    required Brightness brightness,
+    required double textScale,
+    MdvResolver? resolver,
+  }) {
+    renderCalls++;
+    lastResolver = resolver;
+    return '<html><body><h1 data-md-line="1">Hello</h1></body></html>';
+  }
+}

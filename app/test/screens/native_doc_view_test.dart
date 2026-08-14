@@ -494,8 +494,12 @@ void main() {
       persist: (_, _) async {},
     );
 
-    // Pre-layout frame: no positions → a no-op, not a crash.
-    listener.drive(const []);
+    // Pre-layout frame: no positions → a no-op, not a crash. Driven
+    // with a FRESH empty list, not `const []`: the listener's
+    // ValueNotifier seeds with a const empty list, and an identical
+    // value skips notification entirely — only a distinct instance
+    // actually runs the empty-positions guard under test.
+    listener.drive(<ItemPosition>[]);
     expect(docState.progress, 0);
     expect(docState.activeLine, 0);
 
@@ -551,17 +555,57 @@ void main() {
     expect(docState.activeLine, fakeLongTreeStartLine(8));
 
     // …then the footnotes item (index 9 = blocks.length) becomes topmost:
-    // startLineForIndex → null → the line HOLDS; progress keeps going.
+    // startLineForIndex → null → the line HOLDS; progress keeps going
+    // (its bottom edge still below the viewport: no snap yet).
     listener.drive(const [
-      ItemPosition(index: 9, itemLeadingEdge: -0.8, itemTrailingEdge: 1.0),
+      ItemPosition(index: 9, itemLeadingEdge: -0.6, itemTrailingEdge: 1.2),
     ]);
     expect(
       docState.activeLine,
       fakeLongTreeStartLine(8),
       reason: 'a null line mapping keeps the last known line',
     );
-    expect(docState.progress, closeTo((9 + 0.8 / 1.8) / 10, 1e-9));
+    expect(docState.progress, closeTo((9 + 0.6 / 1.8) / 10, 1e-9));
     expect(docState.progress, greaterThan(0.9));
+
+    // …and once the last item's bottom edge reaches the viewport
+    // (itemTrailingEdge <= 1) progress SNAPS to exactly 1.0 — parity
+    // with the webview's exact-1.0 at its scroll end; the line still
+    // holds.
+    listener.drive(const [
+      ItemPosition(index: 9, itemLeadingEdge: -0.8, itemTrailingEdge: 1.0),
+    ]);
+    expect(docState.activeLine, fakeLongTreeStartLine(8));
+    expect(docState.progress, 1.0);
+
+    scroll.dispose();
+  });
+
+  testWidgets('progress snaps to exactly 1.0 whenever the last item is '
+      'fully visible — the block-weighted value alone would cap below 1.0 '
+      'when the tail fits in the viewport', (tester) async {
+    final tree = fakeLongTree(paragraphs: 9); // itemCount 10
+    final docState = ReaderDocState(model: DocModel.empty);
+    final listener = _DrivenPositionsListener();
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: docState,
+      progressKey: 'reader.scroll.sample:Long.md',
+      lineKey: 'reader.line.sample:Long.md',
+      positionsListener: listener,
+      persist: (_, _) async {},
+    );
+
+    // The last two items on screen, the final one ending above the
+    // viewport bottom: block-weighted progress would be
+    // (8 + 0.2/0.6)/10 ≈ 0.83 — but the document end is fully visible,
+    // which IS the webview's progress==1.0 scroll-end.
+    listener.drive(const [
+      ItemPosition(index: 8, itemLeadingEdge: -0.2, itemTrailingEdge: 0.4),
+      ItemPosition(index: 9, itemLeadingEdge: 0.4, itemTrailingEdge: 0.95),
+    ]);
+    expect(docState.activeLine, fakeLongTreeStartLine(8));
+    expect(docState.progress, 1.0);
 
     scroll.dispose();
   });
@@ -589,7 +633,9 @@ void main() {
     emptyScroll.dispose();
 
     // itemCount 1 with a zero-extent position (trailing == leading):
-    // the consumed-fraction division is guarded.
+    // the consumed-fraction division is guarded (no throw); the item is
+    // also the LAST item with its trailing edge on screen, so the
+    // bottom snap then reports exactly 1.0.
     final one = fakeLongTree(paragraphs: 0);
     final oneDocState = ReaderDocState(model: DocModel.empty);
     final oneListener = _DrivenPositionsListener();
@@ -605,7 +651,7 @@ void main() {
       ItemPosition(index: 0, itemLeadingEdge: 0.3, itemTrailingEdge: 0.3),
     ]);
     expect(oneDocState.activeLine, fakeLongTreeStartLine(0));
-    expect(oneDocState.progress, 0);
+    expect(oneDocState.progress, 1.0);
     expect(tester.takeException(), isNull);
     oneScroll.dispose();
   });

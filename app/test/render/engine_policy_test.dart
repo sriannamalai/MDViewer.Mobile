@@ -229,6 +229,26 @@ void main() {
       );
     });
 
+    test('override=native + plain doc → native (agreement cell)', () {
+      expect(
+        resolveEngine(
+          persistedOverride: ReaderEngine.native,
+          hasMermaid: false,
+        ),
+        ReaderEngine.native,
+      );
+    });
+
+    test('override=webview + mermaid doc → webview (agreement cell)', () {
+      expect(
+        resolveEngine(
+          persistedOverride: ReaderEngine.webview,
+          hasMermaid: true,
+        ),
+        ReaderEngine.webview,
+      );
+    });
+
     test('no override + mermaid doc → webview', () {
       expect(
         resolveEngine(persistedOverride: null, hasMermaid: true),
@@ -286,6 +306,10 @@ void main() {
       expect(
         lineKey(VaultSource.folder, 'notes/x.md'),
         'reader.line.folder:notes/x.md',
+      );
+      expect(
+        lineKey(VaultSource.openedFile, 'Shared.md'),
+        'reader.line.openedFile:Shared.md',
       );
     });
   });

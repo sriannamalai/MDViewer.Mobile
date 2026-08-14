@@ -15,8 +15,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../navigation.dart';
 import '../render/codecopy.dart';
 import '../render/engine_policy.dart';
+import '../render/link_policy.dart';
+import '../render/native_images.dart';
 import '../render/renderer.dart';
 import '../render/resolver.dart';
 import '../render/scrollspy.dart';
@@ -29,21 +32,53 @@ import '../vault/vault_entry.dart';
 import '../vault/vault_path.dart';
 import '../vault/vault_source.dart';
 import '../widgets/text_scale_stepper.dart';
+import 'native_doc_view.dart';
 import 'outline_sheet.dart';
 
 /// The Reader — design/README.md §02: blurred header (back/filename+meta/
-/// share), a 2px scroll-progress hairline, the rendered document in a
-/// [WebViewWidget], and a blurred bottom bar (Outline pill, current
-/// section·%, an "Aa" text-size control).
+/// share), a 2px scroll-progress hairline, the rendered document, and a
+/// blurred bottom bar (Outline pill, current section·%, an "Aa" text-size
+/// control). As of v2 the chrome hosts one of TWO engines — only the
+/// content widget swaps:
 ///
-/// Owns the full parse-once/render-many pipeline: reads [entry]'s bytes,
-/// parses them once (`renderer.dart`'s [DocRenderer]), pre-resolves its
-/// relative images (`resolver.dart`'s [DocImages]) before the first render
-/// (the plugin's resolver callback is synchronous; the vault read isn't —
-/// see resolver.dart's doc comment), injects the scrollspy and code-copy
-/// scripts (`scrollspy.dart`, `codecopy.dart`) into the rendered HTML, and
+/// - **native** (the default): `DocRenderer.renderTree` → typed [MdvTree]
+///   → [NativeDocView] ([MdvDocumentAdapter] over a positioned list).
+///   Text scale and theme feed the adapter at BUILD time, so Aa steps and
+///   theme flips restyle in place with no re-render and no scroll reset.
+///   Built AT MOST ONCE per document, ever — cached on state; never
+///   rebuilt on Aa/theme/engine switches.
+/// - **webview** (v1's path, byte-for-byte unchanged): parse → render →
+///   `loadHtmlString` with the injected scrollspy/code-copy scripts,
+///   re-rendered on theme/text-scale changes. Auto-selected for mermaid
+///   documents (`treeContainsMermaid`) until the offscreen-SVG
+///   fast-follow.
+///
+/// Engine resolution (engine_policy.dart): the per-document persisted
+/// override (`reader.engine.…`, the Aa sheet's Engine row) wins outright
+/// — it even skips the detection `renderTree`; else mermaid → webview;
+/// else native.
+///
+/// **Fallback posture:** a [DocRenderer.renderTree] failure of ANY kind
+/// falls back to the webview engine — a tree the plugin can't build must
+/// never brick the reader, and the webview engine always works. The
+/// failure is remembered per document (no retry storms); the cached
+/// verdict also serves engine switches.
+///
+/// The webview pipeline is otherwise as it always was: reads [entry]'s
+/// bytes, parses them once (`renderer.dart`'s [DocRenderer]), pre-resolves
+/// its relative images (`resolver.dart`'s [DocImages]) before the first
+/// render (the plugin's HTML resolver callback is synchronous; the vault
+/// read isn't — see resolver.dart's doc comment), injects the scrollspy
+/// and code-copy scripts (`scrollspy.dart`, `codecopy.dart`), and
 /// re-renders (preserving scroll position) whenever the effective theme or
-/// text-scale step changes.
+/// text-scale step changes. On the native engine images resolve lazily and
+/// async instead (`native_images.dart`) and there is no prefetch pass —
+/// [DocImages] runs on demand the first time the webview engine or the
+/// share export actually needs it (never per build).
+///
+/// The [WebViewController] and its JavaScript channels are created LAZILY,
+/// only once the engine actually resolves to webview — a native document
+/// must not create (or register channels on) a webview it never shows.
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({
     super.key,
@@ -87,11 +122,50 @@ class _ReaderScreenState extends State<ReaderScreen> {
   static const double _hairlineHeight = 2;
 
   late final DocRenderer _renderer = widget.renderer ?? DocRenderer();
-  late final WebViewController _controller;
+
+  /// Created lazily by [_ensureController], the first time the engine
+  /// actually resolves to webview (load, or a native→webview switch) —
+  /// null for the whole lifetime of a document that only ever renders
+  /// natively. Created at most once; an engine round-trip reuses it.
+  WebViewController? _controller;
 
   _LoadStatus _status = _LoadStatus.loading;
   Object? _error;
   Map<String, dynamic>? _parsedDoc;
+
+  /// The engine currently hosting the document (null until [_load]
+  /// resolves it). Swapped live by [_setEngine].
+  ReaderEngine? _engine;
+
+  /// The document's typed render tree — built AT MOST ONCE per document
+  /// by [_ensureTree] (never on Aa steps, theme flips, or engine
+  /// switches). Null while unbuilt or when [renderTree] failed
+  /// ([_treeAttempted] remembers the attempt either way).
+  MdvTree? _tree;
+  bool _treeAttempted = false;
+
+  /// The native engine's scroll plumbing, one instance per native
+  /// activation (created by [_setUpNativeScroll], disposed on
+  /// native→webview switch and in [dispose]).
+  NativeReaderScroll? _nativeScroll;
+
+  /// The item index the native list first paints at — computed BEFORE
+  /// paint from the engine-neutral line (restore / initialLine /
+  /// switch handoff), so position restore lands as list construction.
+  int _nativeInitialIndex = 0;
+
+  /// The native engine's image resolver — ONE long-lived callback per
+  /// document (the plugin memoizes on callback equality; an inline
+  /// closure per build would refetch every image every rebuild — see
+  /// native_images.dart's identity contract).
+  MdvImageResolver? _nativeImageResolver;
+
+  /// Whether [_images] holds this document's [DocImages.prefetch]
+  /// result yet. The webview load path prefetches eagerly (its HTML
+  /// resolver is synchronous); a native-engine document defers it until
+  /// the webview engine or the share export first needs it — lazily at
+  /// that moment, once, never per build.
+  bool _imagesPrefetched = false;
 
   /// The images [_load] prefetched for this document, kept for the
   /// screen's lifetime so theme/text-scale re-renders reuse them. (Found
@@ -131,11 +205,26 @@ class _ReaderScreenState extends State<ReaderScreen> {
   String get _linePrefsKey =>
       lineKey(widget.entry.source, widget.entry.relPath);
 
+  /// The per-document engine override key (`reader.engine.…`,
+  /// engine_policy.dart) — absent means auto-detect.
+  String get _enginePrefsKey =>
+      engineKey(widget.entry.source, widget.entry.relPath);
+
   @override
   void initState() {
     super.initState();
     _pendingInitialLine = widget.initialLine;
-    _controller = WebViewController()
+    unawaited(_load());
+  }
+
+  /// Creates (once) and returns the webview controller + channels —
+  /// byte-for-byte the configuration v1 built eagerly in [initState],
+  /// now deferred until the engine actually resolves to webview so a
+  /// native document never pays for (or registers) a webview.
+  WebViewController _ensureController() {
+    final existing = _controller;
+    if (existing != null) return existing;
+    final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0x00000000))
       ..addJavaScriptChannel(
@@ -152,11 +241,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
           onPageFinished: _handlePageFinished,
         ),
       );
-    unawaited(_load());
+    _controller = controller;
+    return controller;
   }
 
   @override
   void dispose() {
+    _nativeScroll?.dispose();
     _docState?.removeListener(_handleDocStateChanged);
     _docState?.dispose();
     super.dispose();
@@ -173,24 +264,77 @@ class _ReaderScreenState extends State<ReaderScreen> {
       final markdown = utf8.decode(bytes, allowMalformed: true);
       final parsed = _renderer.parse(markdown);
       final model = DocModel.analyze(parsed);
-      final images = await DocImages.prefetch(
-        parsed,
-        (relPath) => vault.resolveRelative(widget.entry, relPath),
-      );
 
       final prefs = await SharedPreferences.getInstance();
-      _pendingRestoreProgress = prefs.getDouble(_prefsKey);
+
+      // Engine resolution (engine_policy.dart's precedence): a persisted
+      // per-document override wins outright — it even skips the
+      // detection renderTree (an override never re-detects). Otherwise
+      // the tree is built once here and walked for mermaid; a renderTree
+      // failure of any kind resolves to webview (see the class doc's
+      // fallback posture).
+      final override = ReaderEngine.decode(prefs.getString(_enginePrefsKey));
+      ReaderEngine engine;
+      if (override != null) {
+        engine = override;
+      } else {
+        final tree = _ensureTree(parsed);
+        engine = tree == null
+            ? ReaderEngine.webview
+            : resolveEngine(
+                persistedOverride: null,
+                hasMermaid: treeContainsMermaid(tree),
+              );
+      }
+      // The override=native case still needs the tree (detection never
+      // ran); a failed build falls back to webview here too.
+      if (engine == ReaderEngine.native && _ensureTree(parsed) == null) {
+        engine = ReaderEngine.webview;
+      }
+
+      final docState = ReaderDocState(model: model);
+
+      if (engine == ReaderEngine.native) {
+        // NO image prefetch on the native path: the adapter's resolver
+        // is async, so images resolve lazily on demand — one long-lived
+        // callback per document (identity contract, native_images.dart).
+        _nativeImageResolver = NativeImageResolver(
+          resolveBytes: (relPath) =>
+              vault.resolveRelative(widget.entry, relPath),
+        ).call;
+        // A search-result initialLine beats the persisted line, same
+        // one-shot priority as the webview path — consumed here (the
+        // native list paints there; a later engine switch must not
+        // re-jump to it).
+        final initialLine = _pendingInitialLine;
+        _pendingInitialLine = null;
+        _setUpNativeScroll(
+          _tree!,
+          docState,
+          initialLine: initialLine,
+          persistedLine: NativeReaderScroll.persistedLine(prefs, _linePrefsKey),
+        );
+      } else {
+        final images = await DocImages.prefetch(
+          parsed,
+          (relPath) => vault.resolveRelative(widget.entry, relPath),
+        );
+        _images = images;
+        _imagesPrefetched = true;
+        _pendingRestoreProgress = prefs.getDouble(_prefsKey);
+      }
 
       if (!mounted) return;
-      final docState = ReaderDocState(model: model)
-        ..addListener(_handleDocStateChanged);
-      _images = images;
+      docState.addListener(_handleDocStateChanged);
       setState(() {
         _parsedDoc = parsed;
         _docState = docState;
+        _engine = engine;
         _status = _LoadStatus.ready;
       });
-      await _renderInto();
+      if (engine == ReaderEngine.webview) {
+        await _renderInto();
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -198,6 +342,47 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _error = error;
       });
     }
+  }
+
+  /// Builds the document's [MdvTree] AT MOST ONCE, ever: the first call
+  /// attempts [DocRenderer.renderTree] and caches the outcome — tree or
+  /// failure — and every later call (Aa steps and theme flips never get
+  /// here; engine switches do) returns that cached verdict. Null means
+  /// the build failed: the caller falls back to the webview engine (the
+  /// class doc's fallback posture — this is also exactly what keeps a
+  /// host without the FFI library on the always-working webview path).
+  MdvTree? _ensureTree(Object doc) {
+    if (_treeAttempted) return _tree;
+    _treeAttempted = true;
+    try {
+      _tree = _renderer.renderTree(doc);
+    } catch (_) {
+      _tree = null;
+    }
+    return _tree;
+  }
+
+  /// Creates the native scroll plumbing for one native activation and
+  /// precomputes the list's first-paint index from the engine-neutral
+  /// line ([NativeReaderScroll.initialScrollIndex]'s priority:
+  /// [initialLine] beats [persistedLine]; no line → top).
+  void _setUpNativeScroll(
+    MdvTree tree,
+    ReaderDocState docState, {
+    int? initialLine,
+    int? persistedLine,
+  }) {
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: docState,
+      progressKey: _prefsKey,
+      lineKey: _linePrefsKey,
+    );
+    _nativeInitialIndex = scroll.initialScrollIndex(
+      initialLine: initialLine,
+      persistedLine: persistedLine,
+    );
+    _nativeScroll = scroll;
   }
 
   Future<void> _renderInto() async {
@@ -219,7 +404,92 @@ class _ReaderScreenState extends State<ReaderScreen> {
     // neither script contains a '</body>' literal, so order only decides
     // which script sits first before the real closing tag — semantically
     // independent either way.
-    await _controller.loadHtmlString(injectCodeCopy(injectScrollSpy(html)));
+    await _ensureController().loadHtmlString(
+      injectCodeCopy(injectScrollSpy(html)),
+    );
+  }
+
+  /// Live engine swap (the Aa sheet's Engine row), keeping the reading
+  /// position via the engine-neutral line — [ReaderDocState.activeLine],
+  /// the same value both engines persist. Persists the per-document
+  /// override first: the user's choice is absolute in both directions
+  /// (engine_policy.dart's precedence).
+  Future<void> _setEngine(ReaderEngine engine) async {
+    if (_engine == engine || _status != _LoadStatus.ready) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_enginePrefsKey, engine.wire);
+    if (!mounted) return;
+    if (engine == ReaderEngine.native) {
+      await _activateNative();
+    } else {
+      await _activateWebview();
+    }
+  }
+
+  /// webview → native: build (or reuse — [_ensureTree] caches, so
+  /// renderTree still runs at most once per document across any number
+  /// of switches) the tree, map the current line to its block index
+  /// BEFORE the native list's first paint, and swap the content widget.
+  /// If the tree can't be built the reader STAYS on webview (fallback
+  /// posture) — the override is persisted regardless, and the next open
+  /// resolves it the same way.
+  Future<void> _activateNative() async {
+    final doc = _parsedDoc;
+    final docState = _docState;
+    if (doc == null || docState == null) return;
+    final tree = _ensureTree(doc);
+    if (tree == null) return;
+    final vault = context.read<VaultState>();
+    _nativeImageResolver ??= NativeImageResolver(
+      resolveBytes: (relPath) => vault.resolveRelative(widget.entry, relPath),
+    ).call;
+    final line = docState.activeLine;
+    _setUpNativeScroll(
+      tree,
+      docState,
+      initialLine: line > 0 ? line : null,
+      persistedLine: null,
+    );
+    setState(() => _engine = ReaderEngine.native);
+  }
+
+  /// native → webview: dispose the native scroll plumbing (flushing its
+  /// pending position write), create the lazy controller NOW, and
+  /// restore the position by re-arming the existing one-shot
+  /// [_pendingInitialLine] machinery — [_handlePageFinished] consumes it
+  /// exactly once after the load, so the jump can't double-fire and a
+  /// later Aa/theme re-render is back on the normal progress-restore
+  /// path. Prefetches [DocImages] first if this document never ran it
+  /// (native-engine docs defer it — see [_imagesPrefetched]).
+  Future<void> _activateWebview() async {
+    final docState = _docState;
+    _nativeScroll?.dispose();
+    _nativeScroll = null;
+    final line = docState?.activeLine ?? 0;
+    _pendingInitialLine = line > 0 ? line : null;
+    _pendingRestoreProgress = null;
+    await _prefetchImagesOnce();
+    if (!mounted) return;
+    _ensureController();
+    setState(() => _engine = ReaderEngine.webview);
+    await _renderInto();
+  }
+
+  /// Runs this document's [DocImages.prefetch] if it hasn't run yet —
+  /// the lazy half of the split documented on [_imagesPrefetched]
+  /// (webview loads prefetch eagerly; native-engine docs land here from
+  /// [_share] or a native→webview switch). Never runs twice, never per
+  /// build.
+  Future<void> _prefetchImagesOnce() async {
+    if (_imagesPrefetched) return;
+    final doc = _parsedDoc;
+    if (doc == null) return;
+    final vault = context.read<VaultState>();
+    _images = await DocImages.prefetch(
+      doc,
+      (relPath) => vault.resolveRelative(widget.entry, relPath),
+    );
+    _imagesPrefetched = true;
   }
 
   void _handleScrollSpyMessage(JavaScriptMessage message) {
@@ -256,6 +526,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _handlePageFinished(String url) {
+    // Only ever invoked by the webview's own NavigationDelegate, so the
+    // lazy controller necessarily exists by now.
+    final controller = _controller;
+    if (controller == null) return;
     final line = _pendingInitialLine;
     if (line != null) {
       _pendingInitialLine = null;
@@ -265,14 +539,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
       // doesn't undo the jump by restoring the *old* progress instead of
       // whatever scrollspy reports once the jump lands.
       _pendingRestoreProgress = null;
-      unawaited(_controller.runJavaScript(scrollToLineScript(line)));
+      unawaited(controller.runJavaScript(scrollToLineScript(line)));
       return;
     }
 
     final restore = _pendingRestoreProgress;
     if (restore != null) {
       _pendingRestoreProgress = null;
-      unawaited(_controller.runJavaScript(scrollToProgressScript(restore)));
+      unawaited(controller.runJavaScript(scrollToProgressScript(restore)));
     }
   }
 
@@ -352,10 +626,62 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
+  /// The native engine's link taps ([NativeDocView.onLinkTap]), routed
+  /// through the shared pure decision table (`link_policy.dart`) so the
+  /// two engines can never drift:
+  ///
+  /// - [blocked] → defensive no-op (the plugin renders blocked links
+  ///   inert with no tap affordance, so this is never called for one in
+  ///   practice — but a policy change upstream must not turn into a
+  ///   navigation here).
+  /// - [LinkExternal] → the same [_openExternal] the webview path uses.
+  /// - [LinkInternalMd] → resolve against this entry's directory and
+  ///   push a Reader on BOTH platforms — natively retiring the v1
+  ///   webview path's Android internal-nav no-op.
+  /// - [LinkDecline] → no-op (mailto/tel/data/about/unknown, non-md
+  ///   targets, and pure `#fragment` anchors — the latter a documented
+  ///   v2 native limitation; the webview engine handles them in-page).
+  void _handleNativeLinkTap(String url, bool blocked, String? source) {
+    if (blocked) return;
+    switch (decideLinkTap(url, platform: defaultTargetPlatform)) {
+      case LinkExternal(:final uri):
+        unawaited(_openExternal(uri));
+      case LinkInternalMd(:final target):
+        unawaited(_openInternalMd(target));
+      case LinkDecline():
+        break;
+    }
+  }
+
+  /// The native half of internal `.md` navigation: same
+  /// [VaultPath.resolve] + [VaultState.findByRelPath] lookup the webview
+  /// path performs, but the destination is PUSHED ([pushReader]) rather
+  /// than replacing this Reader — back returns to the linking document.
+  /// Unresolvable targets (absolute paths, vault escapes, files not in
+  /// the vault) are a no-op, matching the webview path's documented
+  /// behavior.
+  Future<void> _openInternalMd(String target) async {
+    final resolved = VaultPath.resolve(widget.entry.relPath, target);
+    if (resolved == null || !mounted) return;
+
+    final vault = context.read<VaultState>();
+    final found = vault.findByRelPath(widget.entry.source, resolved);
+    if (found == null || !mounted) return;
+
+    await pushReader(context, found);
+  }
+
   Future<void> _share() async {
     final doc = _parsedDoc;
     if (doc == null || !mounted) return;
     try {
+      // A native-engine document never prefetched its images (the
+      // adapter resolves them lazily); the share export's synchronous
+      // HTML resolver needs them, so run the prefetch NOW, once —
+      // cached for later shares and any engine switch. A no-op on
+      // webview-engine docs (prefetched at load).
+      await _prefetchImagesOnce();
+      if (!mounted) return;
       final brightness = Theme.of(context).brightness;
       final html = _renderer.render(
         doc,
@@ -383,6 +709,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
+  /// The Aa bottom sheet: the text-size stepper plus — once the
+  /// document is loaded — the per-document Engine row (the reader's one
+  /// menu surface; the header carries only back/share, so per the
+  /// spec's "chrome identical across engines" rule the switch lives
+  /// here. Placement flagged for Sri at final review as the spec's
+  /// "existing overflow/menu area").
   void _openTextScaleSheet() {
     final tokens = AppTokens.of(context);
     showModalBottomSheet<void>(
@@ -393,27 +725,42 @@ class _ReaderScreenState extends State<ReaderScreen> {
           top: Radius.circular(AppGeometry.sheetRadius),
         ),
       ),
+      // StatefulBuilder so the Engine row re-highlights after a switch
+      // completes — the sheet is its own route, so the Reader's
+      // setState alone would not rebuild it.
       builder: (_) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
         child: SafeArea(
           top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 18),
-                  decoration: BoxDecoration(
-                    color: tokens.line,
-                    borderRadius: BorderRadius.circular(2),
+          child: StatefulBuilder(
+            builder: (sheetContext, setSheetState) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 18),
+                    decoration: BoxDecoration(
+                      color: tokens.line,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              const TextScaleStepper(),
-            ],
+                const TextScaleStepper(),
+                if (_engine != null) ...[
+                  const SizedBox(height: 24),
+                  _EngineSelector(
+                    engine: _engine!,
+                    onSelect: (engine) async {
+                      await _setEngine(engine);
+                      if (sheetContext.mounted) setSheetState(() {});
+                    },
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
       ),
@@ -432,14 +779,20 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   /// The Reader's engine routing seam for a user-initiated jump-to-line
-  /// (outline tap): the webview engine runs the injected
-  /// `__mdvScrollToLine` script — VERBATIM v1 behavior. Task 5's engine
-  /// integration branches here for the native engine, to
+  /// (outline tap): the native engine goes to
   /// [NativeReaderScroll.scrollToLine] (blockIndexForLine → an animated
-  /// `scrollTo`); the [OutlineSheet] itself is engine-agnostic and
-  /// unchanged.
+  /// `scrollTo`); the webview engine runs the injected
+  /// `__mdvScrollToLine` script — VERBATIM v1 behavior. The
+  /// [OutlineSheet] itself is engine-agnostic and unchanged.
   void _jumpToLine(int line) {
-    unawaited(_controller.runJavaScript(scrollToLineScript(line)));
+    final scroll = _nativeScroll;
+    if (_engine == ReaderEngine.native && scroll != null) {
+      unawaited(scroll.scrollToLine(line));
+      return;
+    }
+    final controller = _controller;
+    if (controller == null) return;
+    unawaited(controller.runJavaScript(scrollToLineScript(line)));
   }
 
   @override
@@ -448,7 +801,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final appState = context.watch<AppState>();
     final brightness = Theme.of(context).brightness;
 
+    // The re-render-on-Aa/theme machinery is a WEBVIEW-ENGINE concern
+    // only: the native engine feeds text scale and palette to the
+    // adapter at build time, so a rebuild IS the restyle — re-rendering
+    // there would rebuild a document that never went stale.
     if (_status == _LoadStatus.ready &&
+        _engine == ReaderEngine.webview &&
         (_renderedScale != appState.textScale ||
             _renderedBrightness != brightness) &&
         !_rerendering) {
@@ -517,7 +875,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
       case _LoadStatus.error:
         return _ReaderError(error: _error, tokens: tokens);
       case _LoadStatus.ready:
-        return WebViewWidget(controller: _controller);
+        final scroll = _nativeScroll;
+        final tree = _tree;
+        if (_engine == ReaderEngine.native && scroll != null && tree != null) {
+          return NativeDocView(
+            tree: tree,
+            itemScrollController: scroll.itemScrollController,
+            itemPositionsListener: scroll.itemPositionsListener,
+            initialScrollIndex: _nativeInitialIndex,
+            onLinkTap: _handleNativeLinkTap,
+            imageProvider: _nativeImageResolver,
+          );
+        }
+        return WebViewWidget(controller: _ensureController());
     }
   }
 }
@@ -854,6 +1224,88 @@ class _AaButton extends StatelessWidget {
   }
 }
 
+/// The Aa sheet's "Engine" row — a tokens-styled segmented
+/// Native / Web view selector (same segment styling as Settings'
+/// theme-mode selector) driving the Reader's per-document engine
+/// override. [engine] is the engine currently hosting the document;
+/// selecting the other one persists `reader.engine.…` and live-swaps,
+/// keeping the reading position by line.
+class _EngineSelector extends StatelessWidget {
+  const _EngineSelector({required this.engine, required this.onSelect});
+
+  final ReaderEngine engine;
+  final void Function(ReaderEngine engine) onSelect;
+
+  static String _label(ReaderEngine engine) {
+    switch (engine) {
+      case ReaderEngine.native:
+        return 'Native';
+      case ReaderEngine.webview:
+        return 'Web view';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppTokens.of(context);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'ENGINE',
+          style: TextStyle(
+            fontFamily: AppFonts.ibmPlexSans,
+            fontSize: AppTypeScale.uiLabelSize,
+            fontWeight: AppTypeScale.uiLabelWeight,
+            letterSpacing: AppTypeScale.uiLabelLetterSpacing,
+            color: tokens.text3,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: ReaderEngine.values.map((candidate) {
+            final active = candidate == engine;
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Material(
+                  color: active ? tokens.accentSoft : tokens.panel2,
+                  borderRadius: BorderRadius.circular(
+                    AppGeometry.radiusButtonMax,
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(
+                      AppGeometry.radiusButtonMax,
+                    ),
+                    onTap: () => onSelect(candidate),
+                    child: Container(
+                      height: AppGeometry.minTapTarget,
+                      alignment: Alignment.center,
+                      child: Text(
+                        _label(candidate),
+                        style: TextStyle(
+                          fontFamily: AppFonts.ibmPlexSans,
+                          fontSize: AppTypeScale.uiTextSize,
+                          fontWeight: active
+                              ? FontWeight.w600
+                              : AppTypeScale.uiTextWeightMin,
+                          color: active ? tokens.accent : tokens.text2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+}
+
 /// The native engine's Reader-side scroll plumbing — ONE instance per
 /// document, created alongside its [MdvTree] (Task 5's engine
 /// integration is the consumer; this class is the whole scroll contract
@@ -885,9 +1337,14 @@ class _AaButton extends StatelessWidget {
 ///   clamped to 0..1, where the consumed fraction is how much of the
 ///   topmost item has scrolled above the viewport top. A BLOCK-WEIGHTED
 ///   approximation by design (every block counts equally regardless of
-///   height): 0 exactly at the top, and it approaches 1 as the last
-///   item is consumed, but mid-document values weigh blocks, not
-///   pixels.
+///   height): 0 exactly at the top, but mid-document values weigh
+///   blocks, not pixels. At the document bottom the value SNAPS to
+///   exactly 1.0: whenever the LAST item's trailing edge is on screen
+///   (`itemTrailingEdge <= 1`) the document end is fully visible —
+///   without the snap the block-weighted value only approaches
+///   `(n-1+ε)/n` when the tail fits inside the viewport, and the
+///   hairline/percent would never report the exact 1.0/100% the
+///   webview engine reports at its scroll end.
 /// - **Persistence** — throttled to at most one write per [throttle]
 ///   (default 500ms), trailing-edge with the LATEST value; [dispose]
 ///   flushes the pending value (a pop/kill right after scrolling must
@@ -1003,9 +1460,19 @@ class NativeReaderScroll {
     final double consumed = extent <= 0
         ? 0
         : ((-topmost.itemLeadingEdge) / extent).clamp(0.0, 1.0).toDouble();
-    final progress = ((topmost.index + consumed) / itemCount)
+    var progress = ((topmost.index + consumed) / itemCount)
         .clamp(0.0, 1.0)
         .toDouble();
+    // Bottom snap — see the class doc's Progress bullet: the last
+    // item's trailing edge at/above the viewport bottom means the
+    // document end is fully visible, which is exactly the webview's
+    // progress==1.0 scroll-end.
+    for (final position in positions) {
+      if (position.index == itemCount - 1 && position.itemTrailingEdge <= 1) {
+        progress = 1.0;
+        break;
+      }
+    }
     // Null (the footnotes item / a spanless block) keeps the last known
     // line — docState.activeLine IS the last applied line.
     final line =

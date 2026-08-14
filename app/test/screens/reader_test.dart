@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:app/src/render/renderer.dart';
+import 'package:app/src/screens/native_doc_view.dart';
 import 'package:app/src/screens/reader.dart';
 import 'package:app/src/state/app_state.dart';
 import 'package:app/src/state/vault_state.dart';
@@ -17,9 +18,12 @@ import 'package:flutter/services.dart' show MethodCall, SystemChannels;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mdviewer/mdviewer.dart';
 import 'package:provider/provider.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:webview_flutter/webview_flutter.dart' show WebViewWidget;
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
+import '../support/fake_tree.dart';
 import '../support/fake_webview_platform.dart';
 
 Uint8List _bytes(String s) => Uint8List.fromList(utf8.encode(s));
@@ -702,4 +706,496 @@ void main() {
       expect(prefs.getInt('reader.line.sample:Welcome.md'), 7);
     },
   );
+
+  // ── v2 dual-engine Reader (Task 5) ────────────────────────────────
+  // Additions only: every test above is byte-untouched. Those tests keep
+  // exercising the WEBVIEW engine because _FakeDocRenderer inherits the
+  // real renderTree, which throws on a host with no FFI library, and a
+  // renderTree failure of any kind falls back to the webview engine (the
+  // Reader's documented fallback posture). The tests below use the
+  // shared FakeTreeDocRenderer (support/fake_tree.dart), whose
+  // renderTree returns canned typed trees — putting the Reader on the
+  // native path deterministically.
+
+  testWidgets('a plain document resolves to the NATIVE engine: the typed tree '
+      'renders and no webview is created or registered', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NativeDocView), findsOneWidget);
+    expect(find.text(fakeTreeHeadingText), findsOneWidget);
+    expect(find.text(fakeTreeParagraphText), findsOneWidget);
+    expect(find.byType(WebViewWidget), findsNothing);
+    expect(
+      platform.controllers,
+      isEmpty,
+      reason:
+          'a native document must not create — or register '
+          'channels on — a webview',
+    );
+    expect(renderer.renderTreeCalls, 1);
+    expect(
+      renderer.renderCalls,
+      0,
+      reason: 'no HTML render on the native path',
+    );
+  });
+
+  testWidgets('a mermaid document auto-selects the WEBVIEW engine '
+      '(one detection renderTree, then the v1 pipeline)', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer(tree: fakeMermaidTree);
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NativeDocView), findsNothing);
+    final controller = platform.controllers.single;
+    expect(controller.loadedHtml, contains('data-md-line="1"'));
+    expect(controller.channels.keys, containsAll(['ScrollSpy', 'CodeCopy']));
+    expect(renderer.renderTreeCalls, 1);
+    expect(renderer.renderCalls, 1);
+  });
+
+  testWidgets(
+    'a persisted WEBVIEW override wins on a plain document — and skips '
+    'even the detection renderTree',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'reader.engine.sample:Welcome.md': 'webview',
+      });
+      final entry = _sampleEntry();
+      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+      final appState = AppState();
+      await appState.init();
+      final renderer = FakeTreeDocRenderer();
+
+      await tester.pumpWidget(
+        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NativeDocView), findsNothing);
+      expect(platform.controllers.single.loadedHtml, isNotNull);
+      expect(
+        renderer.renderTreeCalls,
+        0,
+        reason: 'an override never re-detects',
+      );
+    },
+  );
+
+  testWidgets('a persisted NATIVE override wins on a mermaid document — the '
+      'escape hatch is absolute in both directions', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'reader.engine.sample:Welcome.md': 'native',
+    });
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer(tree: fakeMermaidTree);
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NativeDocView), findsOneWidget);
+    expect(find.text(fakeTreeHeadingText), findsOneWidget);
+    expect(platform.controllers, isEmpty);
+    expect(renderer.renderTreeCalls, 1);
+  });
+
+  testWidgets(
+    'a renderTree failure of any kind falls back to the WEBVIEW engine '
+    '— the reader must never brick on a tree the plugin cannot build',
+    (tester) async {
+      final entry = _sampleEntry();
+      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+      final appState = AppState();
+      await appState.init();
+      final renderer = FakeTreeDocRenderer()
+        ..throwOnRenderTree = StateError('tree build failed');
+
+      await tester.pumpWidget(
+        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(NativeDocView), findsNothing);
+      expect(
+        platform.controllers.single.loadedHtml,
+        contains('data-md-line="1"'),
+      );
+      expect(renderer.renderTreeCalls, 1);
+      expect(renderer.renderCalls, 1);
+    },
+  );
+
+  testWidgets('Aa step and theme flip on the native engine restyle in place: '
+      'renderTree stays at 1, no HTML render, no webview, and the list '
+      'state (scroll) survives', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final listState = tester.state(find.byType(ScrollablePositionedList));
+    final treeBefore = tester
+        .widget<NativeDocView>(find.byType(NativeDocView))
+        .tree;
+
+    // Aa step through the sheet (the same control the webview tests
+    // drive), then dismiss the sheet.
+    await tester.tap(find.text('Aa'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('+'));
+    await tester.pumpAndSettle();
+    expect(find.text('115%'), findsOneWidget);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    // Theme flip via the platform brightness (themeMode is system).
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    await tester.pumpAndSettle();
+
+    expect(renderer.renderTreeCalls, 1);
+    expect(
+      renderer.renderCalls,
+      0,
+      reason:
+          'the _renderedScale/_renderedBrightness re-render '
+          'machinery is gated to the webview engine only',
+    );
+    expect(platform.controllers, isEmpty);
+    expect(
+      identical(
+        tester.widget<NativeDocView>(find.byType(NativeDocView)).tree,
+        treeBefore,
+      ),
+      isTrue,
+      reason: 'Aa/theme never rebuild the tree',
+    );
+    expect(
+      identical(tester.state(find.byType(ScrollablePositionedList)), listState),
+      isTrue,
+      reason:
+          'no re-render means the list state — and with it the '
+          'scroll position — survives Aa and theme changes',
+    );
+  });
+
+  testWidgets(
+    'engine switch native→webview: the lazy controller is created only '
+    'then, and the position is restored by line via the one-shot script '
+    '(no double fire)',
+    (tester) async {
+      final entry = _sampleEntry();
+      final vault = await _vaultWith(entry, '# Hello\n\ndeep doc\n');
+      final appState = AppState();
+      await appState.init();
+      final deepLine = fakeLongTreeStartLine(30);
+      final renderer = FakeTreeDocRenderer(
+        tree: fakeLongTree,
+        parseChildren: [
+          {
+            'kind': 'heading',
+            'level': 1,
+            'span': {'startLine': 1},
+            'children': [
+              {'kind': 'text', 'value': 'Top'},
+            ],
+          },
+          {
+            'kind': 'heading',
+            'level': 2,
+            'span': {'startLine': deepLine},
+            'children': [
+              {'kind': 'text', 'value': 'Deep'},
+            ],
+          },
+        ],
+      );
+
+      await tester.pumpWidget(
+        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+      );
+      await tester.pumpAndSettle();
+      expect(platform.controllers, isEmpty);
+
+      // Jump deep via the outline — the native half of _jumpToLine
+      // (blockIndexForLine → animated scrollTo), which also drives
+      // docState.activeLine to the deep heading's line via the
+      // positions listener.
+      await tester.tap(find.text('Outline'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Deep'));
+      await tester.pumpAndSettle();
+      expect(find.text(fakeLongTreeParagraphText(30)), findsOneWidget);
+      expect(
+        find.text('Deep'),
+        findsOneWidget,
+        reason:
+            'the bottom bar section label tracks the deep heading — '
+            'proof the native scrollspy applied its line',
+      );
+
+      // Switch to Web view from the Aa sheet.
+      await tester.tap(find.text('Aa'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Web view'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NativeDocView), findsNothing);
+      final controller = platform.controllers.single;
+      expect(controller.loadedHtml, isNotNull);
+
+      controller.navigationDelegate?.onPageFinished?.call('about:blank');
+      await tester.pump();
+      expect(
+        controller.executedScripts,
+        contains(contains('__mdvScrollToLine($deepLine)')),
+      );
+
+      // One-shot semantics: a later page load must not re-fire the jump
+      // or fall back to a progress restore.
+      controller.navigationDelegate?.onPageFinished?.call('about:blank');
+      await tester.pump();
+      expect(
+        controller.executedScripts
+            .where((s) => s.contains('__mdvScrollToLine'))
+            .length,
+        1,
+      );
+      expect(
+        controller.executedScripts.any(
+          (s) => s.contains('__mdvScrollToProgress'),
+        ),
+        isFalse,
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('reader.engine.sample:Welcome.md'), 'webview');
+    },
+  );
+
+  testWidgets('engine switch webview→native: the tree is first built at the '
+      'switch and the initial index is computed from the engine-neutral '
+      'line BEFORE the native list first paints', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'reader.engine.sample:Welcome.md': 'webview',
+    });
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\ndeep doc\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer(tree: fakeLongTree);
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+    final controller = platform.controllers.single;
+    expect(renderer.renderTreeCalls, 0);
+
+    // Read to a deep line on the webview engine…
+    final deepLine = fakeLongTreeStartLine(30);
+    controller.simulateMessage('ScrollSpy', '{"p": 0.7, "h": $deepLine}');
+    await tester.pump();
+
+    // …then switch to Native from the Aa sheet.
+    await tester.tap(find.text('Aa'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Native'));
+    await tester.pumpAndSettle();
+
+    expect(
+      renderer.renderTreeCalls,
+      1,
+      reason:
+          'the webview-override load skipped detection; the tree '
+          'is first needed — and built exactly once — at the switch',
+    );
+    final view = tester.widget<NativeDocView>(find.byType(NativeDocView));
+    expect(
+      view.initialScrollIndex,
+      30,
+      reason: 'line → block index BEFORE first paint (no top flash)',
+    );
+    expect(find.text(fakeLongTreeParagraphText(30)), findsOneWidget);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('reader.engine.sample:Welcome.md'), 'native');
+  });
+
+  testWidgets('an engine switch round-trip reuses the cached tree (renderTree '
+      'exactly once, ever) and the one lazily-created controller', (
+    tester,
+  ) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer(tree: fakeLongTree);
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+    expect(renderer.renderTreeCalls, 1);
+
+    await tester.tap(find.text('Aa'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Web view'));
+    await tester.pumpAndSettle();
+    expect(find.byType(NativeDocView), findsNothing);
+    expect(platform.controllers, hasLength(1));
+
+    // The sheet is still up (StatefulBuilder re-highlighted the row);
+    // switch straight back.
+    await tester.tap(find.text('Native'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NativeDocView), findsOneWidget);
+    expect(
+      renderer.renderTreeCalls,
+      1,
+      reason:
+          'never rebuilt on switches — the cached tree serves '
+          'every native activation',
+    );
+    expect(
+      platform.controllers,
+      hasLength(1),
+      reason:
+          'the controller is created once and reused, never '
+          're-registered',
+    );
+  });
+
+  testWidgets('a native relative .md link tap pushes a Reader — Android '
+      '(the webview-era Android internal-nav no-op is retired)', (
+    tester,
+  ) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(
+      entry,
+      '# Hello\n\none two three\n',
+      extraFiles: {'Other.md': _bytes('# Other\n')},
+    );
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    // The wired native tap callback — exactly what a rendered link
+    // invokes plugin-side.
+    final onLinkTap = tester
+        .widget<NativeDocView>(find.byType(NativeDocView))
+        .onLinkTap!;
+    onLinkTap('Other.md#section', false, null);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byType(ReaderScreen, skipOffstage: false),
+      findsNWidgets(2),
+      reason:
+          'pushed (pushReader), not replaced — back returns to '
+          'the linking document',
+    );
+    expect(find.text('Other.md'), findsWidgets);
+  });
+
+  testWidgets('a native relative .md link tap pushes a Reader — iOS override '
+      '(both platforms share the one pure decision table)', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(
+      entry,
+      '# Hello\n\none two three\n',
+      extraFiles: {'Other.md': _bytes('# Other\n')},
+    );
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final onLinkTap = tester
+        .widget<NativeDocView>(find.byType(NativeDocView))
+        .onLinkTap!;
+    onLinkTap('Other.md', false, null);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ReaderScreen, skipOffstage: false), findsNWidgets(2));
+    expect(find.text('Other.md'), findsWidgets);
+
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('native link taps that must not navigate: a blocked link is a '
+      'defensive no-op, and declined shapes (pure #fragment, mailto:) '
+      'stay put', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(
+      entry,
+      '# Hello\n\none two three\n',
+      extraFiles: {'Other.md': _bytes('# Other\n')},
+    );
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final onLinkTap = tester
+        .widget<NativeDocView>(find.byType(NativeDocView))
+        .onLinkTap!;
+    // blocked=true on an otherwise-navigable target: never called in
+    // practice (the plugin renders blocked links inert), but a policy
+    // change upstream must not turn into a navigation here.
+    onLinkTap('Other.md', true, null);
+    await tester.pumpAndSettle();
+    // Declined shapes from the pure table.
+    onLinkTap('#section', false, null);
+    onLinkTap('mailto:a@b.c', false, null);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ReaderScreen, skipOffstage: false), findsOneWidget);
+  });
 }
