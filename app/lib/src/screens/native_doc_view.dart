@@ -58,6 +58,7 @@ class NativeDocView extends StatelessWidget {
     this.initialScrollIndex = 0,
     this.onLinkTap,
     this.imageProvider,
+    this.palette,
   });
 
   /// The document's typed render tree — built exactly once per document
@@ -86,6 +87,17 @@ class NativeDocView extends StatelessWidget {
   /// re-resolves whenever this compares unequal across builds.
   final MdvImageResolver? imageProvider;
 
+  /// The loaded palette for the CURRENT brightness
+  /// (`native_palette.dart`'s [NativePalettes.forBrightness], picked
+  /// Reader-side at build time). Null keeps the adapter's own
+  /// ambient-brightness default — correct page colors but NO syntax
+  /// highlight token colors, which is exactly the fidelity gap the
+  /// loaded palette closes (see native_palette.dart). Passing it here
+  /// rather than resolving inside means a theme flip still restyles in
+  /// place: the Reader re-picks from the same cached pair, with no
+  /// re-render and no async gap.
+  final MdvPalette? palette;
+
   // Stateless by design: every field is host-owned (the Reader holds the
   // tree, controller/listener, resolver), and the per-build adapter is
   // the styling mechanism — there is nothing to keep in State. (Task 4's
@@ -97,8 +109,11 @@ class NativeDocView extends StatelessWidget {
     final textScale = context.watch<AppState>().textScale;
     final adapter = MdvDocumentAdapter(
       tree,
-      // palette stays null: resolved from the ambient Theme's brightness
-      // at item-build time, so a theme flip recolors without a new tree.
+      // The loaded palette for this brightness when the host has one
+      // ([palette]); null falls back to the adapter resolving the
+      // ambient Theme's brightness at item-build time. Either way a
+      // theme flip recolors without a new tree.
+      palette: palette,
       baseStyle: TextStyle(fontSize: 16 * textScale),
       onLinkTap: onLinkTap,
       imageProvider: imageProvider,

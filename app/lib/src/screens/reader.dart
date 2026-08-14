@@ -20,6 +20,7 @@ import '../render/codecopy.dart';
 import '../render/engine_policy.dart';
 import '../render/link_policy.dart';
 import '../render/native_images.dart';
+import '../render/native_palette.dart';
 import '../render/renderer.dart';
 import '../render/resolver.dart';
 import '../render/scrollspy.dart';
@@ -159,6 +160,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
   /// closure per build would refetch every image every rebuild — see
   /// native_images.dart's identity contract).
   MdvImageResolver? _nativeImageResolver;
+
+  /// The library's loaded light/dark palettes, fetched ONCE per process
+  /// ([NativePalettes.ensureLoaded]) the first time this reader
+  /// activates the native engine — the syntax-highlight token colors
+  /// the adapter's baked-in defaults omit (native_palette.dart). Null
+  /// when the assets are unreachable: the adapter then resolves its own
+  /// ambient default, exactly as before.
+  NativePalettes? _palettes;
 
   /// Whether [_images] holds this document's [DocImages.prefetch]
   /// result yet. The webview load path prefetches eagerly (its HTML
@@ -302,6 +311,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
           resolveBytes: (relPath) =>
               vault.resolveRelative(widget.entry, relPath),
         ).call;
+        // Awaited BEFORE the first paint so code fences come up already
+        // token-colored — a post-paint setState would flash flat text.
+        _palettes = await NativePalettes.ensureLoaded(_renderer);
         // A search-result initialLine beats the persisted line, same
         // one-shot priority as the webview path — consumed here (the
         // native list paints there; a later engine switch must not
@@ -443,6 +455,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _nativeImageResolver ??= NativeImageResolver(
       resolveBytes: (relPath) => vault.resolveRelative(widget.entry, relPath),
     ).call;
+    _palettes ??= await NativePalettes.ensureLoaded(_renderer);
+    if (!mounted) return;
     final line = docState.activeLine;
     _setUpNativeScroll(
       tree,
@@ -885,6 +899,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
             initialScrollIndex: _nativeInitialIndex,
             onLinkTap: _handleNativeLinkTap,
             imageProvider: _nativeImageResolver,
+            // Picked per build so a theme flip swaps palettes in place
+            // (no reload, no renderTree) — same mechanism as baseStyle.
+            palette: _palettes?.forBrightness(Theme.of(context).brightness),
           );
         }
         return WebViewWidget(controller: _ensureController());

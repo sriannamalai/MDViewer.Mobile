@@ -156,6 +156,37 @@ MdvTree fakeLongTree({int paragraphs = 39}) => MdvTree(
   footnotes: const [],
 );
 
+/// The token type [fakeCodeRunsTree]'s first run carries — a real
+/// chroma name, the key shape `highlight-*.json` uses.
+const String fakeCodeRunTokenType = 'Keyword';
+
+/// The literal text of [fakeCodeRunsTree]'s first (keyword) run.
+const String fakeCodeRunKeywordText = 'void';
+
+/// A one-block document whose code fence carries SYNTAX-HIGHLIGHT TOKEN
+/// RUNS (what `renderTreeDoc` really produces — highlighting is on by
+/// default in the tree builder). [fakeTree]'s code block deliberately
+/// has `runs: null`; this fixture is the other half, so the palette's
+/// `tokenColors` have something to color (Task 7's on-device finding:
+/// the adapter's baked-in default palettes carry NO token colors).
+MdvTree fakeCodeRunsTree() => const MdvTree(
+  version: 1,
+  blocks: [
+    MdvCodeBlock(
+      id: 'fixture-runs-c1',
+      span: MdvSpan(startLine: 1, endLine: 3, startOffset: 0, endOffset: 25),
+      language: 'dart',
+      label: 'dart',
+      runs: [
+        MdvTokenRun(text: fakeCodeRunKeywordText, tokenType: 'Keyword'),
+        MdvTokenRun(text: ' main() {}', tokenType: 'Text'),
+      ],
+      text: '$fakeCodeRunKeywordText main() {}',
+    ),
+  ],
+  footnotes: [],
+);
+
 /// [fakeTree] plus a trailing mermaid diagram block — the
 /// `treeContainsMermaid` auto-webview trigger for engine-policy reader
 /// tests.

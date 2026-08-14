@@ -22,9 +22,13 @@ import '../support/fake_tree.dart';
 /// created once, never per-build values — [poke] rebuilds via `setState`
 /// so tests can assert what survives a rebuild unchanged.
 class _Host extends StatefulWidget {
-  const _Host({required this.tree});
+  const _Host({required this.tree, this.palette});
 
   final MdvTree tree;
+
+  /// The loaded palette the Reader hands down (native_palette.dart);
+  /// null keeps the adapter's ambient-brightness default.
+  final MdvPalette? palette;
 
   @override
   State<_Host> createState() => _HostState();
@@ -53,6 +57,7 @@ class _HostState extends State<_Host> {
       itemScrollController: scrollController,
       itemPositionsListener: positionsListener,
       imageProvider: resolver,
+      palette: widget.palette,
     );
   }
 }
@@ -60,10 +65,11 @@ class _HostState extends State<_Host> {
 /// App shell around the host: providers + MaterialApp with a mutable
 /// [ThemeMode] so tests can flip the ambient brightness live.
 class _Shell extends StatefulWidget {
-  const _Shell({required this.appState, required this.tree});
+  const _Shell({required this.appState, required this.tree, this.palette});
 
   final AppState appState;
   final MdvTree tree;
+  final MdvPalette? palette;
 
   @override
   State<_Shell> createState() => _ShellState();
@@ -82,7 +88,9 @@ class _ShellState extends State<_Shell> {
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         themeMode: mode,
-        home: Scaffold(body: _Host(tree: widget.tree)),
+        home: Scaffold(
+          body: _Host(tree: widget.tree, palette: widget.palette),
+        ),
       ),
     );
   }
@@ -94,8 +102,15 @@ Future<AppState> _appState() async {
   return appState;
 }
 
-Future<void> _pump(WidgetTester tester, AppState appState, MdvTree tree) async {
-  await tester.pumpWidget(_Shell(appState: appState, tree: tree));
+Future<void> _pump(
+  WidgetTester tester,
+  AppState appState,
+  MdvTree tree, {
+  MdvPalette? palette,
+}) async {
+  await tester.pumpWidget(
+    _Shell(appState: appState, tree: tree, palette: palette),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -276,6 +291,81 @@ void main() {
 
     expect(find.byType(MdvCopyButton), findsOneWidget);
     expect(find.text('Copy'), findsOneWidget);
+  });
+
+  // ── Syntax-highlight palette (Task 7's on-device finding): the
+  // adapter's baked-in default palettes carry page colors but an EMPTY
+  // tokenColors map, so a null palette renders every code fence flat
+  // while the webview engine highlights it. The Reader now hands down a
+  // LOADED palette (native_palette.dart).
+
+  testWidgets('a null palette leaves code token runs UNCOLORED — the '
+      'regression this fixture pins', (tester) async {
+    final appState = await _appState();
+    await _pump(tester, appState, fakeCodeRunsTree());
+
+    expect(
+      _codeRunColor(tester, fakeCodeRunKeywordText),
+      MdvPalette.light.foreground,
+      reason:
+          'MdvPalette.light has no tokenColors, so every token falls '
+          'back to foreground — flat, unhighlighted code',
+    );
+  });
+
+  testWidgets('a loaded palette colors code token runs by chroma token '
+      'type', (tester) async {
+    const keyword = Color(0xFFCF222E);
+    final appState = await _appState();
+    await _pump(
+      tester,
+      appState,
+      fakeCodeRunsTree(),
+      palette: MdvPalette.light.copyWith(
+        tokenColors: const {fakeCodeRunTokenType: keyword},
+      ),
+    );
+
+    expect(_codeRunColor(tester, fakeCodeRunKeywordText), keyword);
+  });
+
+  testWidgets('the palette is a build-time input: swapping it restyles in '
+      'place, same tree instance', (tester) async {
+    const light = Color(0xFFCF222E);
+    const dark = Color(0xFFFF7B72);
+    final appState = await _appState();
+    final tree = fakeCodeRunsTree();
+    await _pump(
+      tester,
+      appState,
+      tree,
+      palette: MdvPalette.light.copyWith(
+        tokenColors: const {fakeCodeRunTokenType: light},
+      ),
+    );
+    expect(_codeRunColor(tester, fakeCodeRunKeywordText), light);
+
+    // What a theme flip does Reader-side: re-pick from the cached pair.
+    await tester.pumpWidget(
+      _Shell(
+        appState: appState,
+        tree: tree,
+        palette: MdvPalette.dark.copyWith(
+          tokenColors: const {fakeCodeRunTokenType: dark},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(_codeRunColor(tester, fakeCodeRunKeywordText), dark);
+    expect(
+      identical(
+        tester.widget<NativeDocView>(find.byType(NativeDocView)).tree,
+        tree,
+      ),
+      isTrue,
+      reason: 'a palette swap must never rebuild the document',
+    );
   });
 
   // ── NativeReaderScroll (plan Task 4): the Reader-side scroll plumbing,
@@ -819,6 +909,24 @@ Future<void> _pumpScrollHost(
     ),
   );
   await tester.pumpAndSettle();
+}
+
+/// The color the rendered code block paints the token run whose text is
+/// [runText] — walks the `Text.rich` span tree the plugin's code-block
+/// view builds (one child [TextSpan] per [MdvTokenRun]).
+Color? _codeRunColor(WidgetTester tester, String runText) {
+  for (final richText in tester.widgetList<RichText>(find.byType(RichText))) {
+    Color? found;
+    richText.text.visitChildren((span) {
+      if (span is TextSpan && span.text == runText) {
+        found = span.style?.color;
+        return false;
+      }
+      return true;
+    });
+    if (found != null) return found;
+  }
+  fail('no rendered code token run with text "$runText"');
 }
 
 /// The min index with `itemTrailingEdge > 0` — the same topmost-visible
