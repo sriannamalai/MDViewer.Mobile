@@ -21,18 +21,20 @@ released, checksum-verified mobile binaries — nothing here builds Go or
 touches a Go toolchain.
 
 **How the submodule is pinned:** `vendor/markdownviewer` is pinned to the
-library's `flutter-v0.8.1` tag. Since v0.7.1 the library cuts a
+library's `flutter-v0.10.1` tag. Since v0.7.1 the library cuts a
 `flutter-vX.Y.Z` tag on the commit whose plugin `pubspec.yaml` and
 `tool/checksums.txt` both carry that release — so the tag's
 `fetch_binaries.sh` can verify and download the matching
-`libmdviewer-0.8.1-*.zip` release artifacts directly. (The v0.7.0 era
-predated those tags: the checksums landed on `main` *after* the `v0.7.0`
-tag was cut, which forced a raw-commit pin back then. That rationale is
-obsolete — pin `flutter-v*` tags going forward.)
+`libmdviewer-0.10.0-*.zip` release artifacts directly (0.10.1 is a
+Dart-only plugin release with no artifact set of its own — the pinned
+binaries stay v0.10.0). (The v0.7.0 era predated those tags: the
+checksums landed on `main` *after* the `v0.7.0` tag was cut, which forced
+a raw-commit pin back then. That rationale is obsolete — pin
+`flutter-v*` tags going forward.)
 
-1. **Prerequisites**: Flutter 3.44.x, Xcode + an iOS simulator runtime,
-   Android SDK + an AVD (or a physical device for either platform),
-   CocoaPods.
+1. **Prerequisites**: Flutter 3.44.x, Xcode + an iOS simulator runtime
+   (iOS 15.0+ deployment target), Android SDK + an AVD (or a physical
+   device for either platform), CocoaPods.
 2. **Bootstrap** — from the repo root, once per fresh checkout (idempotent,
    safe to re-run):
 
@@ -72,7 +74,47 @@ obsolete — pin `flutter-v*` tags going forward.)
    flutter test
    ```
 
-## Known limitations (v1)
+## Known limitations (v2)
+
+The Reader has two rendering engines. **Native** (the plugin's typed
+render tree, via `MdvDocumentAdapter`) is the default for every document.
+**Webview** (the original `loadHtmlString` pipeline) is always available
+as a fallback — a document containing a Mermaid diagram auto-selects it
+(native has no Mermaid renderer yet; a fast-follow will render diagrams
+to an offscreen SVG instead), and any document can be switched to it by
+hand. The per-document **Engine** row in the Aa sheet is the escape
+hatch for every native-only limitation below: switching to Webview picks
+up the feature immediately, on that document only, and the choice
+persists across relaunch.
+
+Native engine only:
+
+- **Footnote references don't jump.** The definitions render (in a
+  trailing section), but tapping an in-text footnote marker does nothing
+  — the rendering library doesn't resolve footnote-ref taps yet (v1
+  descope in the library, not this app). The Webview engine handles them
+  in-page.
+- **SVG images show as alt text.** Flutter's image pipeline can't decode
+  SVG, so relative `.svg` targets decline to the alt-text placeholder
+  instead of rendering. The Webview engine renders them.
+- **Pure `#fragment` links are inert.** Native navigation and scrollspy
+  are line-based, not anchor-based, so a link that is only a fragment
+  (no file target) does nothing. The Webview engine handles in-page
+  anchor jumps.
+- **Progress / hairline % is a block-weighted approximation**, not a
+  pixel-accurate scroll fraction — every block counts equally regardless
+  of its rendered height. It snaps to exactly 100% at the bottom of a
+  document that's taller than the viewport (matching what the Webview
+  engine reports at its scroll end); a document that fits entirely
+  inside the viewport never scrolls, so it reports 0%, same as Webview.
+- **Internal relative `.md` links push a new Reader screen** (back
+  returns to the linking document), while the Webview engine still
+  *replaces* the current Reader with the target. This is a real
+  cross-engine back-stack difference, carried forward pending
+  harmonization — switching engines mid-document doesn't change how the
+  *next* link tap navigates.
+
+Both engines:
 
 - **"Open with MDViewer" opens the file alone.** A document handed over
   by the OS (share sheet, Files app, another app) renders fully, but its
@@ -82,20 +124,20 @@ obsolete — pin `flutter-v*` tags going forward.)
 - **One folder vault at a time.** Picking a new folder replaces the
   previous grant; there is no multi-vault list. The bundled Samples vault
   is always present alongside it.
-- **Internal relative `.md` links navigate on iOS only.** On Android the
-  WebView collapses a tapped relative link's URL before the app sees it
-  (`loadHtmlString` has no base URL), so the target is unrecoverable —
-  the tap is deliberately a no-op there rather than a blank page.
 - **Wiki-links (`[[Like This]]`) do not navigate** — they render styled
   but inert. Use the Library tree or Search to move between documents.
-- **`mailto:` / `tel:` links are declined** — v1 opens only `http(s)`
-  links (in the system browser) and vault-relative `.md` links (in the
-  Reader).
+- **`mailto:` / `tel:` links are declined** — the Reader opens only
+  `http(s)` links (in the system browser) and vault-relative `.md` links
+  (in the Reader).
 - **Share exports self-contained HTML only** — no PDF export yet.
-- **The reader renders with the system font stack** — the webview document
-  doesn't use the design's Source Serif 4 / IBM Plex Sans / JetBrains Mono
-  (ledgered library gap); the app chrome around it does bundle those fonts.
 - Read-only by design: no editing, no file management, no sync.
+
+Webview engine only:
+
+- **The Webview-rendered document uses the system font stack**, not the
+  design's Source Serif 4 / IBM Plex Sans / JetBrains Mono (ledgered
+  library gap) — the app chrome around it bundles those fonts regardless
+  of which engine is rendering the document body.
 
 ### Regenerating launcher icons
 

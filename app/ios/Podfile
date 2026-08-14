@@ -1,5 +1,8 @@
-# file_picker's SPM package requires iOS 14.0+; match the Runner target's
+# The current Flutter toolchain (3.44/Dart 3.13) applies an iOS 15.0
+# deployment target automatically; match the Runner target's
 # IPHONEOS_DEPLOYMENT_TARGET (see ios/Runner.xcodeproj/project.pbxproj).
+# file_picker's SPM package only requires iOS 14.0+, so that floor isn't
+# the binding constraint here.
 platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
