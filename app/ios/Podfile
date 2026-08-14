@@ -1,6 +1,6 @@
 # file_picker's SPM package requires iOS 14.0+; match the Runner target's
 # IPHONEOS_DEPLOYMENT_TARGET (see ios/Runner.xcodeproj/project.pbxproj).
-platform :ios, '14.0'
+platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'

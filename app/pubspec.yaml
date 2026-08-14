@@ -44,6 +44,10 @@ dependencies:
   path_provider: ^2.1.6
   mdviewer:
     path: ../vendor/markdownviewer/flutter/mdviewer
+  # Pinned exact (house rule): pin what `flutter pub add` resolves.
+  # Used by the v2 native reader (ScrollablePositionedList over
+  # MdvDocumentAdapter) — the dependency lives in the app, not the plugin.
+  scrollable_positioned_list: 0.3.8
 
 dev_dependencies:
   flutter_test:

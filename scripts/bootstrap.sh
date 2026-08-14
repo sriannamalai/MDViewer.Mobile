@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Brings a fresh checkout of MDViewer.Mobile to a runnable state:
 #   1. Initializes/updates the vendor/markdownviewer submodule (pinned to
-#      the library's flutter-v0.8.1 tag — see README.md's "How the
+#      the library's flutter-v0.10.1 tag — see README.md's "How the
 #      submodule is pinned").
 #   2. Fetches the release-published, checksum-verified mobile binaries via
-#      the plugin's own fetch script.
+#      the plugin's own fetch script. NOTE: the binaries are v0.10.0 —
+#      0.10.1 is a Dart-only plugin release with no artifact set of its
+#      own (the 0.10.x version handshake accepts them by design).
 #
 # Idempotent — safe to re-run; the submodule update is a no-op once checked
 # out, and fetch_binaries.sh skips re-downloading via its own marker file.
@@ -31,12 +33,12 @@ if [[ ! -x "$fetch_script" ]]; then
   exit 1
 fi
 
-echo "==> Fetching released mobile binaries (mdviewer v0.8.1, checksum-verified)..."
-if ! MDVIEWER_VERSION="v0.8.1" "$fetch_script"; then
+echo "==> Fetching released mobile binaries (mdviewer v0.10.0, checksum-verified)..."
+if ! MDVIEWER_VERSION="v0.10.0" "$fetch_script"; then
   echo "error: fetch_binaries.sh failed — see output above." >&2
   echo "       Common causes: no network access to github.com release assets," >&2
   echo "       or tool/checksums.txt in the pinned submodule ref lacking a" >&2
-  echo "       v0.8.1 entry. See README.md for which ref is pinned and why." >&2
+  echo "       v0.10.0 entry. See README.md for which ref is pinned and why." >&2
   exit 1
 fi
 
