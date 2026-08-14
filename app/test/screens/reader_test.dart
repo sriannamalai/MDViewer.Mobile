@@ -883,6 +883,11 @@ void main() {
 
     expect(renderer.renderTreeCalls, 1);
     expect(
+      renderer.parseCalls,
+      1,
+      reason: 'parse stays at once — Aa/theme never re-parse the document',
+    );
+    expect(
       renderer.renderCalls,
       0,
       reason:
@@ -1085,6 +1090,11 @@ void main() {
       reason:
           'never rebuilt on switches — the cached tree serves '
           'every native activation',
+    );
+    expect(
+      renderer.parseCalls,
+      1,
+      reason: 'parse stays at once across the whole engine round-trip',
     );
     expect(
       platform.controllers,

@@ -1344,7 +1344,13 @@ class _EngineSelector extends StatelessWidget {
 ///   without the snap the block-weighted value only approaches
 ///   `(n-1+ε)/n` when the tail fits inside the viewport, and the
 ///   hairline/percent would never report the exact 1.0/100% the
-///   webview engine reports at its scroll end.
+///   webview engine reports at its scroll end. The snap requires the
+///   document to be SCROLLABLE: when both ends are on screen at once
+///   (item 0's leading edge at/below the viewport top AND the last
+///   item's trailing edge at/above its bottom) the list never moves and
+///   the webview reports 0 there — scrollY never leaves 0 — so a
+///   fits-in-the-viewport document keeps its block-weighted value (0 at
+///   rest) instead of opening at 100%.
 /// - **Persistence** — throttled to at most one write per [throttle]
 ///   (default 500ms), trailing-edge with the LATEST value; [dispose]
 ///   flushes the pending value (a pop/kill right after scrolling must
@@ -1466,11 +1472,21 @@ class NativeReaderScroll {
     // Bottom snap — see the class doc's Progress bullet: the last
     // item's trailing edge at/above the viewport bottom means the
     // document end is fully visible, which is exactly the webview's
-    // progress==1.0 scroll-end.
-    for (final position in positions) {
-      if (position.index == itemCount - 1 && position.itemTrailingEdge <= 1) {
-        progress = 1.0;
-        break;
+    // progress==1.0 scroll-end. Gated on the document actually
+    // scrolling: when BOTH ends are on screen the list never moves, and
+    // the webview reports 0 there (scrollY stays 0), so snapping would
+    // put every short document at 100% the moment it opens.
+    final fitsEntirely =
+        positions.any((p) => p.index == 0 && p.itemLeadingEdge >= 0) &&
+        positions.any(
+          (p) => p.index == itemCount - 1 && p.itemTrailingEdge <= 1,
+        );
+    if (!fitsEntirely) {
+      for (final position in positions) {
+        if (position.index == itemCount - 1 && position.itemTrailingEdge <= 1) {
+          progress = 1.0;
+          break;
+        }
       }
     }
     // Null (the footnotes item / a spanless block) keeps the last known

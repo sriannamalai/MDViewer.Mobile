@@ -633,9 +633,13 @@ void main() {
     emptyScroll.dispose();
 
     // itemCount 1 with a zero-extent position (trailing == leading):
-    // the consumed-fraction division is guarded (no throw); the item is
-    // also the LAST item with its trailing edge on screen, so the
-    // bottom snap then reports exactly 1.0.
+    // the consumed-fraction division is guarded (no throw). The single
+    // item is BOTH the first and the last, with both edges on screen —
+    // the document does not scroll, and the bottom snap is gated on
+    // that, so progress stays the block-weighted 0. Webview parity: an
+    // unscrollable document reports 0 there too (scrollY never leaves
+    // 0), and 100%-at-first-paint would also write a bogus 1.0 to the
+    // shared `reader.scroll.…` restore key.
     final one = fakeLongTree(paragraphs: 0);
     final oneDocState = ReaderDocState(model: DocModel.empty);
     final oneListener = _DrivenPositionsListener();
@@ -651,9 +655,47 @@ void main() {
       ItemPosition(index: 0, itemLeadingEdge: 0.3, itemTrailingEdge: 0.3),
     ]);
     expect(oneDocState.activeLine, fakeLongTreeStartLine(0));
-    expect(oneDocState.progress, 1.0);
+    expect(oneDocState.progress, 0);
     expect(tester.takeException(), isNull);
     oneScroll.dispose();
+  });
+
+  testWidgets('a multi-item document that fits ENTIRELY in the viewport '
+      'reports its block-weighted value (0 at rest), not the bottom '
+      'snap — the webview reports 0 on an unscrollable document', (
+    tester,
+  ) async {
+    final tree = fakeLongTree(paragraphs: 2); // itemCount 3
+    final docState = ReaderDocState(model: DocModel.empty);
+    final listener = _DrivenPositionsListener();
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: docState,
+      progressKey: 'reader.scroll.sample:Short.md',
+      lineKey: 'reader.line.sample:Short.md',
+      positionsListener: listener,
+      persist: (_, _) async {},
+    );
+
+    // Every item on screen at once: item 0's leading edge at the
+    // viewport top AND the last item's trailing edge above its bottom.
+    // The list cannot move, so this IS the top of the document.
+    listener.drive(const [
+      ItemPosition(index: 0, itemLeadingEdge: 0, itemTrailingEdge: 0.2),
+      ItemPosition(index: 1, itemLeadingEdge: 0.2, itemTrailingEdge: 0.4),
+      ItemPosition(index: 2, itemLeadingEdge: 0.4, itemTrailingEdge: 0.6),
+    ]);
+    expect(docState.activeLine, fakeLongTreeStartLine(0));
+    expect(
+      docState.progress,
+      0,
+      reason:
+          'a document that never scrolls must not open at 100% — '
+          'the webview reports 0 (scrollY stays 0), and the snap would '
+          'also persist a bogus 1.0 under the shared restore key',
+    );
+
+    scroll.dispose();
   });
 
   testWidgets('persistence is throttled to one write per 500ms carrying the '
