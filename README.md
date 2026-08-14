@@ -109,10 +109,14 @@ Native engine only:
   inside the viewport never scrolls, so it reports 0%, same as Webview.
 - **Internal relative `.md` links push a new Reader screen** (back
   returns to the linking document), while the Webview engine still
-  *replaces* the current Reader with the target. This is a real
-  cross-engine back-stack difference, carried forward pending
-  harmonization — switching engines mid-document doesn't change how the
-  *next* link tap navigates.
+  *replaces* the current Reader with the target (iOS — see the Webview
+  note below for Android). This is a real cross-engine back-stack
+  difference, carried forward pending harmonization — switching engines
+  mid-document doesn't change how the *next* link tap navigates.
+- **CRLF-line-ending code fences render without syntax highlighting**
+  on the native engine (the library's token runs fail closed on CRLF;
+  the code still renders as plain monospace text). The Webview engine
+  highlights the same fence normally.
 
 Both engines:
 
@@ -134,6 +138,11 @@ Both engines:
 
 Webview engine only:
 
+- **Internal relative `.md` links only navigate on iOS.** On Android
+  the WebView collapses a tapped relative link's URL before the app
+  sees it (`loadHtmlString` has no base URL), so the tap is a
+  deliberate no-op there — switch the document to Native to navigate
+  on Android.
 - **The Webview-rendered document uses the system font stack**, not the
   design's Source Serif 4 / IBM Plex Sans / JetBrains Mono (ledgered
   library gap) — the app chrome around it bundles those fonts regardless
