@@ -23,10 +23,7 @@ void main() {
       // including it appears verbatim, unsplit by injected content.
       expect(out, startsWith(html.substring(0, lastBodyClose)));
       // The script lands between the real content and the final </body>.
-      expect(
-        out.indexOf('CodeCopy'),
-        greaterThan(out.indexOf('md-code')),
-      );
+      expect(out.indexOf('CodeCopy'), greaterThan(out.indexOf('md-code')));
       expect(out.indexOf('CodeCopy'), lessThan(out.lastIndexOf('</body>')));
     });
 

@@ -180,33 +180,32 @@ void main() {
     expect(controller.loadedHtml, contains('ScrollSpy'));
   });
 
-  testWidgets(
-    'registers the CodeCopy channel and injects its bridge script',
-    (tester) async {
-      final entry = _sampleEntry();
-      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
-      final appState = AppState();
-      await appState.init();
-      final renderer = _FakeDocRenderer();
+  testWidgets('registers the CodeCopy channel and injects its bridge script', (
+    tester,
+  ) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
 
-      await tester.pumpWidget(
-        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
-      );
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
 
-      final controller = platform.controllers.single;
-      // Channel registered alongside ScrollSpy in the controller setup.
-      expect(controller.channels.keys, containsAll(['ScrollSpy', 'CodeCopy']));
-      // Both injected scripts land in the loaded page, each before the
-      // real </body> (splice discipline is unit-tested in
-      // codecopy_test.dart/scrollspy_test.dart against a mermaid decoy).
-      final html = controller.loadedHtml!;
-      expect(html, contains('window.CodeCopy'));
-      final bodyClose = html.lastIndexOf('</body>');
-      expect(html.indexOf('window.CodeCopy'), lessThan(bodyClose));
-      expect(html.indexOf('ScrollSpy'), lessThan(bodyClose));
-    },
-  );
+    final controller = platform.controllers.single;
+    // Channel registered alongside ScrollSpy in the controller setup.
+    expect(controller.channels.keys, containsAll(['ScrollSpy', 'CodeCopy']));
+    // Both injected scripts land in the loaded page, each before the
+    // real </body> (splice discipline is unit-tested in
+    // codecopy_test.dart/scrollspy_test.dart against a mermaid decoy).
+    final html = controller.loadedHtml!;
+    expect(html, contains('window.CodeCopy'));
+    final bodyClose = html.lastIndexOf('</body>');
+    expect(html.indexOf('window.CodeCopy'), lessThan(bodyClose));
+    expect(html.indexOf('ScrollSpy'), lessThan(bodyClose));
+  });
 
   testWidgets(
     'a CodeCopy message writes the posted code text to the system clipboard',
@@ -303,7 +302,10 @@ void main() {
     );
     expect(fillSize.height, trackSize.height);
     expect(fillSize.height, greaterThan(0));
-    expect(fillSize.width, moreOrLessEquals(trackSize.width * 0.42, epsilon: 1));
+    expect(
+      fillSize.width,
+      moreOrLessEquals(trackSize.width * 0.42, epsilon: 1),
+    );
   });
 
   testWidgets('a garbage scrollspy message is ignored, not a crash', (
@@ -340,7 +342,8 @@ void main() {
     // '$sectionLabel · $percent%' Text, tail ellipsis swallowed the
     // percent entirely (found on-device).
     final renderer = _FakeDocRenderer(
-      headingText: 'An extremely long section heading that cannot possibly '
+      headingText:
+          'An extremely long section heading that cannot possibly '
           'fit in the bottom bar next to the Outline pill and Aa button '
           'without being ellipsized somewhere along the way',
     );
@@ -623,7 +626,10 @@ void main() {
       // regression: _renderInto used to fall back to DocImages.empty on
       // re-render, so the second render's resolver dropped every relative
       // image (found on-device in Task 8's E2E).
-      final resolved = renderer.lastResolver!(MdvResolveKind.image, 'img/x.png');
+      final resolved = renderer.lastResolver!(
+        MdvResolveKind.image,
+        'img/x.png',
+      );
       expect(resolved, isNotNull);
       expect(resolved, startsWith('data:image/png;base64,'));
     },
