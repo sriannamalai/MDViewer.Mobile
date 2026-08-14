@@ -74,8 +74,8 @@ class DocImages {
     final out = <String, String>{};
     var totalBytes = 0;
     for (final target in targets) {
-      if (!_looksRelative(target)) continue;
-      final mime = _mimeByExtension[_extensionOf(target)];
+      if (!looksRelativeTarget(target)) continue;
+      final mime = _mimeByExtension[extensionOf(target)];
       if (mime == null) continue;
 
       Uint8List? bytes;
@@ -101,7 +101,18 @@ class DocImages {
   /// resolution applies to the rest.
   MdvResolver toResolver() => resolverFromMap(_dataUris, kindFilter: {1});
 
-  static bool _looksRelative(String target) {
+  // ---- Shared target rules ------------------------------------------
+  //
+  // Public on purpose: the native engine's resolver
+  // (`native_images.dart`'s NativeImageResolver) applies the SAME
+  // relative-target and extension policy as this pre-resolver — one URL
+  // policy, shared, never forked (the v2 plan's explicit reuse rule).
+  // The native path consumes the allowlist MINUS `.svg` (Flutter's image
+  // codec can't decode SVG); the webview path keeps the full table.
+
+  /// Whether [target] is a vault-relative path (no URL scheme, not a bare
+  /// `#fragment`, not absolute) — the only kind either engine resolves.
+  static bool looksRelativeTarget(String target) {
     if (target.isEmpty) return false;
     if (target.startsWith('#')) return false;
     if (target.startsWith('/')) return false;
@@ -112,9 +123,16 @@ class DocImages {
     return true;
   }
 
-  static String _extensionOf(String target) {
+  /// [target]'s lowercased extension (fragment/query stripped), `''` when
+  /// it has none.
+  static String extensionOf(String target) {
     final clean = target.split('#').first.split('?').first;
     final dot = clean.lastIndexOf('.');
     return dot < 0 ? '' : clean.substring(dot).toLowerCase();
   }
+
+  /// Whether [ext] (an [extensionOf] result) is in the image-extension
+  /// allowlist (the mime table's keys: png/jpg/jpeg/gif/webp/svg).
+  static bool allowsImageExtension(String ext) =>
+      _mimeByExtension.containsKey(ext);
 }

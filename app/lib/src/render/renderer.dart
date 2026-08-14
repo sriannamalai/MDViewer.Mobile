@@ -214,6 +214,24 @@ class DocRenderer {
   Map<String, dynamic> parse(String markdown) =>
       _mdv.parse(markdown, options: const MdvOptions(sourceMap: true));
 
+  /// Renders [doc] (a previously [parse]d document — `Map` or JSON
+  /// `String`) to the typed native render tree — the native engine's
+  /// input, built AT MOST ONCE per document by the Reader (never on Aa
+  /// steps, theme flips, or engine switches; text scale and palette feed
+  /// the widget layer at build time instead).
+  ///
+  /// Same overridable instance-method seam as [parse]/[render], for the
+  /// same reason (see the class doc): a test subclass returns a canned
+  /// [MdvTree] without touching the lazily-resolved [_mdv], so it stays
+  /// constructible AND callable on a host with no reachable libmdviewer.
+  ///
+  /// Spans ride through from [parse]'s `sourceMap: true`, so the tree's
+  /// blocks carry real source positions —
+  /// `MdvDocumentAdapter.blockIndexForLine` needs them; a spanless tree
+  /// (never produced by this pipeline) would return null there and the
+  /// native view degrades to a top start.
+  MdvTree renderTree(Object doc) => _mdv.renderTreeDoc(doc);
+
   /// Re-renders [doc] (a previously [parse]d document — `Map` or JSON
   /// `String`) themed for [brightness] at [textScale], resolving images via
   /// [resolver] (resolver.dart's `DocImages.toResolver()`).

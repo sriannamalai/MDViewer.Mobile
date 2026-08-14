@@ -277,6 +277,25 @@ void main() {
         '<html></html>',
       );
     });
+
+    test(
+      'renderTree is overridable and FFI-lazy exactly like parse/render',
+      () {
+        // Same seam, same reason (see the DocRenderer doc comment): the
+        // subclass is constructible AND callable on a host with no reachable
+        // libmdviewer, because the constructor-lazy _mdv is only touched by
+        // the base implementations the override replaces. Pins the native
+        // engine's test seam (native_doc_view_test.dart and the Reader's
+        // native-path tests inject canned trees through it).
+        final renderer = _TreeDocRenderer();
+        final tree = renderer.renderTree(const <String, dynamic>{
+          'kind': 'noop',
+        });
+        expect(identical(tree, _TreeDocRenderer.canned), isTrue);
+        expect(tree.version, 1);
+        expect(tree.blocks, isEmpty);
+      },
+    );
   });
 }
 
@@ -291,4 +310,11 @@ class _NoopDocRenderer extends DocRenderer {
     required double textScale,
     MdvResolver? resolver,
   }) => '<html></html>';
+}
+
+class _TreeDocRenderer extends DocRenderer {
+  static const MdvTree canned = MdvTree(version: 1, blocks: [], footnotes: []);
+
+  @override
+  MdvTree renderTree(Object doc) => canned;
 }
