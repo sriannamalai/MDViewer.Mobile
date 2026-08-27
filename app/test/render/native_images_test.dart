@@ -117,10 +117,34 @@ void main() {
       },
     );
 
-    test('.svg declines to null even when the vault holds it '
-        '(documented native-engine limitation)', () async {
-      final resolver = await _resolverOver({'img/d.svg': _bytes('<svg/>')});
-      expect(await resolver('img/d.svg', 'diagram'), isNull);
+    test('a well-formed relative svg rasterizes to a non-null ImageProvider '
+        '(NOT a MemoryImage — the bytes are vector source, not raster)', () async {
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" '
+          'viewBox="0 0 24 24"><rect width="24" height="24"/></svg>';
+      final resolver = await _resolverOver({'img/d.svg': _bytes(svg)});
+
+      final provider = await resolver('img/d.svg', 'diagram');
+
+      expect(provider, isNotNull);
+      expect(
+        provider,
+        isNot(isA<MemoryImage>()),
+        reason: 'SVG is rasterized, never wrapped as raw MemoryImage bytes',
+      );
+    });
+
+    test('malformed svg declines to null, never a throw', () async {
+      final resolver = await _resolverOver({
+        'img/bad.svg': _bytes('not actually svg markup'),
+      });
+      expect(await resolver('img/bad.svg', 'diagram'), isNull);
+    });
+
+    test('a zero-size svg (empty viewBox) declines to null', () async {
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" '
+          'viewBox="0 0 0 0"></svg>';
+      final resolver = await _resolverOver({'img/zero.svg': _bytes(svg)});
+      expect(await resolver('img/zero.svg', ''), isNull);
     });
 
     test('an extension outside the allowlist declines', () async {

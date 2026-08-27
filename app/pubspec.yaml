@@ -48,6 +48,13 @@ dependencies:
   # Used by the v2 native reader (ScrollablePositionedList over
   # MdvDocumentAdapter) — the dependency lives in the app, not the plugin.
   scrollable_positioned_list: 0.3.8
+  # Pinned exact (house rule). Used ONLY by the native engine's
+  # NativeImageResolver (native_images.dart) to rasterize SVG images to a
+  # ui.Image — Flutter's own image codecs cannot decode SVG, so this
+  # closes the "SVG images show as alt text" native-engine limitation.
+  # The webview engine never needed it (a WebView renders <img src=.svg>
+  # natively).
+  flutter_svg: 2.3.0
 
 dev_dependencies:
   flutter_test:
