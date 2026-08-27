@@ -107,8 +107,10 @@ class DocImages {
   // (`native_images.dart`'s NativeImageResolver) applies the SAME
   // relative-target and extension policy as this pre-resolver — one URL
   // policy, shared, never forked (the v2 plan's explicit reuse rule).
-  // The native path consumes the allowlist MINUS `.svg` (Flutter's image
-  // codec can't decode SVG); the webview path keeps the full table.
+  // Both paths consume the full allowlist, including `.svg`: the native
+  // path rasterizes SVG bytes via `flutter_svg` first (Flutter's own
+  // image codecs can't decode SVG directly), while the webview path
+  // hands the raw bytes to the browser engine, which decodes SVG itself.
 
   /// Whether [target] is a vault-relative path (no URL scheme, not a bare
   /// `#fragment`, not absolute) — the only kind either engine resolves.

@@ -94,9 +94,6 @@ Native engine only:
   — the rendering library doesn't resolve footnote-ref taps yet (v1
   descope in the library, not this app). The Webview engine handles them
   in-page.
-- **SVG images show as alt text.** Flutter's image pipeline can't decode
-  SVG, so relative `.svg` targets decline to the alt-text placeholder
-  instead of rendering. The Webview engine renders them.
 - **Pure `#fragment` links are inert.** Native navigation and scrollspy
   are line-based, not anchor-based, so a link that is only a fragment
   (no file target) does nothing. The Webview engine handles in-page
