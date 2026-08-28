@@ -109,7 +109,10 @@ class NativeImageResolver {
       final pictureInfo = await vg.loadPicture(SvgBytesLoader(bytes), null);
       final srcWidth = pictureInfo.size.width;
       final srcHeight = pictureInfo.size.height;
-      if (srcWidth <= 0 || srcHeight <= 0 || !srcWidth.isFinite || !srcHeight.isFinite) {
+      if (srcWidth <= 0 ||
+          srcHeight <= 0 ||
+          !srcWidth.isFinite ||
+          !srcHeight.isFinite) {
         pictureInfo.picture.dispose();
         return null;
       }

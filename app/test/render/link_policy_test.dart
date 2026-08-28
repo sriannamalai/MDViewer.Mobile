@@ -131,14 +131,15 @@ void main() {
       }
     });
 
-    test('a pure #fragment (and a pure ?query) declines — the documented '
-        'v2 native limitation; the webview engine handles anchors in-page', () {
+    test('a pure ?query (no fragment) declines', () {
       for (final platform in platforms) {
-        expect(
-          decideLinkTap('#section', platform: platform),
-          const LinkDecline(),
-        );
         expect(decideLinkTap('?q=1', platform: platform), const LinkDecline());
+      }
+    });
+
+    test('an empty #fragment declines', () {
+      for (final platform in platforms) {
+        expect(decideLinkTap('#', platform: platform), const LinkDecline());
       }
     });
 
@@ -165,6 +166,27 @@ void main() {
         expect(
           decideLinkTap('http://[invalid', platform: platform),
           const LinkDecline(),
+        );
+      }
+    });
+  });
+
+  group('fragment-only anchor jump', () {
+    test('a pure #fragment resolves to LinkFragment on BOTH platforms', () {
+      for (final platform in platforms) {
+        expect(
+          decideLinkTap('#section', platform: platform),
+          const LinkFragment('section'),
+        );
+      }
+    });
+
+    test('a pure #fragment with a ?query wins as LinkFragment (fragment '
+        'takes precedence in the URL, matching Uri.fragment)', () {
+      for (final platform in platforms) {
+        expect(
+          decideLinkTap('?q=1#section', platform: platform),
+          const LinkFragment('section'),
         );
       }
     });

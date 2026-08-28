@@ -212,55 +212,23 @@ void main() {
   });
 
   group('resolveEngine precedence', () {
-    test('override=native + mermaid doc → native (escape hatch wins)', () {
+    test('override=native → native', () {
       expect(
-        resolveEngine(persistedOverride: ReaderEngine.native, hasMermaid: true),
+        resolveEngine(persistedOverride: ReaderEngine.native),
         ReaderEngine.native,
       );
     });
 
-    test('override=webview + plain doc → webview', () {
+    test('override=webview → webview', () {
       expect(
-        resolveEngine(
-          persistedOverride: ReaderEngine.webview,
-          hasMermaid: false,
-        ),
+        resolveEngine(persistedOverride: ReaderEngine.webview),
         ReaderEngine.webview,
       );
     });
 
-    test('override=native + plain doc → native (agreement cell)', () {
-      expect(
-        resolveEngine(
-          persistedOverride: ReaderEngine.native,
-          hasMermaid: false,
-        ),
-        ReaderEngine.native,
-      );
-    });
-
-    test('override=webview + mermaid doc → webview (agreement cell)', () {
-      expect(
-        resolveEngine(
-          persistedOverride: ReaderEngine.webview,
-          hasMermaid: true,
-        ),
-        ReaderEngine.webview,
-      );
-    });
-
-    test('no override + mermaid doc → webview', () {
-      expect(
-        resolveEngine(persistedOverride: null, hasMermaid: true),
-        ReaderEngine.webview,
-      );
-    });
-
-    test('no override + plain doc → native', () {
-      expect(
-        resolveEngine(persistedOverride: null, hasMermaid: false),
-        ReaderEngine.native,
-      );
+    test('no override → native (the default; mermaid no longer forces '
+        'webview — the native engine renders it itself)', () {
+      expect(resolveEngine(persistedOverride: null), ReaderEngine.native);
     });
   });
 

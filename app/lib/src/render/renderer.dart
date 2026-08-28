@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:mdviewer/mdviewer.dart';
@@ -243,6 +244,13 @@ class DocRenderer {
   /// without touching the lazily-resolved [_mdv].
   Future<MdvPalette> loadPalette({required bool dark}) =>
       MdvPalette.load(dark: dark, mdviewer: _mdv);
+
+  /// Returns an embedded library asset's raw bytes (e.g. `'mermaid.js'`,
+  /// `'mermaid-bridge.js'`) — used by [MermaidBridge] to load the
+  /// offscreen-rendering scripts. Same overridable instance-method seam
+  /// as the rest of this class: a test subclass returns canned bytes (or
+  /// throws) without touching the lazily-resolved [_mdv].
+  Uint8List asset(String name) => _mdv.asset(name);
 
   /// Re-renders [doc] (a previously [parse]d document — `Map` or JSON
   /// `String`) themed for [brightness] at [textScale], resolving images via

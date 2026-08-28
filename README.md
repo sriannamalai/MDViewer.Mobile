@@ -20,17 +20,25 @@ rendering engine as a git submodule (`vendor/markdownviewer`) plus its
 released, checksum-verified mobile binaries — nothing here builds Go or
 touches a Go toolchain.
 
-**How the submodule is pinned:** `vendor/markdownviewer` is pinned to the
-library's `flutter-v0.10.1` tag. Since v0.7.1 the library cuts a
+**How the submodule is pinned:** `vendor/markdownviewer` is currently
+pinned to a raw commit on the library's `sync/core-engine-gaps` branch
+(CRLF code-fence highlighting fix, the `FootnoteRef.DefID`/
+`Tree.FootnoteByIndex` footnote-definition linkage, the `mermaid-bridge.js`
+offscreen-rendering primitive, and an additive `onFootnoteRefTap`
+plugin callback) — not yet released as a `flutter-v*` tag. Re-pin to the
+first `flutter-v*` tag that includes this commit once the library cuts
+one (see the library's own tagging convention below); the pinned mobile
+binaries stay `v0.10.0` either way — none of the above changed the native
+C ABI or its artifacts.
+
+Once tagged, the convention resumes: since v0.7.1 the library cuts a
 `flutter-vX.Y.Z` tag on the commit whose plugin `pubspec.yaml` and
 `tool/checksums.txt` both carry that release — so the tag's
 `fetch_binaries.sh` can verify and download the matching
-`libmdviewer-0.10.0-*.zip` release artifacts directly (0.10.1 is a
-Dart-only plugin release with no artifact set of its own — the pinned
-binaries stay v0.10.0). (The v0.7.0 era predated those tags: the
-checksums landed on `main` *after* the `v0.7.0` tag was cut, which forced
-a raw-commit pin back then. That rationale is obsolete — pin
-`flutter-v*` tags going forward.)
+`libmdviewer-0.10.0-*.zip` release artifacts directly. (The v0.7.0 era
+predated those tags: the checksums landed on `main` *after* the `v0.7.0`
+tag was cut, which forced a raw-commit pin back then — that rationale is
+obsolete for any *tagged* pin.)
 
 1. **Prerequisites**: Flutter 3.44.x, Xcode + an iOS simulator runtime
    (iOS 15.0+ deployment target), Android SDK + an AVD (or a physical
@@ -77,27 +85,44 @@ a raw-commit pin back then. That rationale is obsolete — pin
 ## Known limitations (v2)
 
 The Reader has two rendering engines. **Native** (the plugin's typed
-render tree, via `MdvDocumentAdapter`) is the default for every document.
-**Webview** (the original `loadHtmlString` pipeline) is always available
-as a fallback — a document containing a Mermaid diagram auto-selects it
-(native has no Mermaid renderer yet; a fast-follow will render diagrams
-to an offscreen SVG instead), and any document can be switched to it by
-hand. The per-document **Engine** row in the Aa sheet is the escape
-hatch for every native-only limitation below: switching to Webview picks
-up the feature immediately, on that document only, and the choice
-persists across relaunch.
+render tree, via `MdvDocumentAdapter`) is the default for every document
+— including ones with a Mermaid diagram, which the native engine now
+renders itself (see "Native Mermaid rendering" below); Mermaid no longer
+auto-selects Webview. **Webview** (the original `loadHtmlString`
+pipeline) is always available as a fallback, and any document can be
+switched to it by hand. The per-document **Engine** row in the Aa sheet
+is the escape hatch for every native-only limitation below: switching to
+Webview picks up the feature immediately, on that document only, and the
+choice persists across relaunch.
+
+**Native Mermaid rendering.** `MermaidBridge` (`lib/src/render/
+mermaid_bridge.dart`) drives a hidden, offscreen `webview_flutter`
+instance running the library's `mermaid.js` + `mermaid-bridge.js` assets,
+created lazily only for a document that actually contains a diagram
+(`treeContainsMermaid`). Each diagram's Mermaid source renders to an SVG
+string via `mdvRenderMermaid`, displayed with `flutter_svg`; any failure
+(no reachable `libmdviewer`, a malformed diagram, a bridge timeout)
+falls back to the library's bordered placeholder, never a crash. One
+follow-on gap: a diagram's rendered colors are fixed to the theme at
+first render — a light/dark flip *after* a diagram has already rendered
+doesn't re-render it until the document is reopened (every other native
+block restyles in place on a theme flip; a diagram is the one exception,
+since re-running the offscreen bridge in place adds real complexity for
+a rare mid-read theme change).
 
 Native engine only:
 
-- **Footnote references don't jump.** The definitions render (in a
-  trailing section), but tapping an in-text footnote marker does nothing
-  — the rendering library doesn't resolve footnote-ref taps yet (v1
-  descope in the library, not this app). The Webview engine handles them
-  in-page.
-- **Pure `#fragment` links are inert.** Native navigation and scrollspy
-  are line-based, not anchor-based, so a link that is only a fragment
-  (no file target) does nothing. The Webview engine handles in-page
-  anchor jumps.
+- **Pure `#fragment` links jump to a matching HEADING only.** Native
+  navigation resolves a fragment against `MdvHeading.anchorId` (the
+  same slugs headings carry); a fragment that isn't a heading anchor
+  (e.g. a custom raw-HTML `id`) is still inert. The Webview engine
+  handles any in-page anchor via the browser's own DOM lookup.
+- **Footnote-reference taps jump to the footnotes section, not the
+  exact definition.** `MdvDocumentAdapter` renders every definition
+  inside ONE trailing list item (no per-definition scroll target), so a
+  tap on any in-text footnote marker scrolls there — close, but not a
+  precise landing when a document has several footnotes. The Webview
+  engine still jumps to the exact definition in-page.
 - **Progress / hairline % is a block-weighted approximation**, not a
   pixel-accurate scroll fraction — every block counts equally regardless
   of its rendered height. It snaps to exactly 100% at the bottom of a
@@ -110,10 +135,6 @@ Native engine only:
   note below for Android). This is a real cross-engine back-stack
   difference, carried forward pending harmonization — switching engines
   mid-document doesn't change how the *next* link tap navigates.
-- **CRLF-line-ending code fences render without syntax highlighting**
-  on the native engine (the library's token runs fail closed on CRLF;
-  the code still renders as plain monospace text). The Webview engine
-  highlights the same fence normally.
 
 Both engines:
 

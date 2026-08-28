@@ -19,6 +19,7 @@ import '../navigation.dart';
 import '../render/codecopy.dart';
 import '../render/engine_policy.dart';
 import '../render/link_policy.dart';
+import '../render/mermaid_bridge.dart';
 import '../render/native_images.dart';
 import '../render/native_palette.dart';
 import '../render/renderer.dart';
@@ -161,6 +162,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
   /// native_images.dart's identity contract).
   MdvImageResolver? _nativeImageResolver;
 
+  /// The native engine's mermaid-to-SVG bridge — created lazily, at
+  /// most once per document, ONLY when `treeContainsMermaid` finds a
+  /// diagram (a document without one must not pay for the hidden
+  /// webview — see mermaid_bridge.dart's class doc). Survives an
+  /// engine round-trip exactly like `_nativeImageResolver`/`_palettes`.
+  MermaidBridge? _mermaidBridge;
+
   /// The library's loaded light/dark palettes, fetched ONCE per process
   /// ([NativePalettes.ensureLoaded]) the first time this reader
   /// activates the native engine — the syntax-highlight token colors
@@ -277,26 +285,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
       final prefs = await SharedPreferences.getInstance();
 
       // Engine resolution (engine_policy.dart's precedence): a persisted
-      // per-document override wins outright — it even skips the
-      // detection renderTree (an override never re-detects). Otherwise
-      // the tree is built once here and walked for mermaid; a renderTree
-      // failure of any kind resolves to webview (see the class doc's
-      // fallback posture).
+      // per-document override wins outright; otherwise native is always
+      // the default (mermaid no longer forces webview — the native
+      // engine renders it itself). Either way, a renderTree failure of
+      // ANY kind falls back to webview (see the class doc's fallback
+      // posture).
       final override = ReaderEngine.decode(prefs.getString(_enginePrefsKey));
-      ReaderEngine engine;
-      if (override != null) {
-        engine = override;
-      } else {
-        final tree = _ensureTree(parsed);
-        engine = tree == null
-            ? ReaderEngine.webview
-            : resolveEngine(
-                persistedOverride: null,
-                hasMermaid: treeContainsMermaid(tree),
-              );
-      }
-      // The override=native case still needs the tree (detection never
-      // ran); a failed build falls back to webview here too.
+      var engine = resolveEngine(persistedOverride: override);
       if (engine == ReaderEngine.native && _ensureTree(parsed) == null) {
         engine = ReaderEngine.webview;
       }
@@ -314,6 +309,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
         // Awaited BEFORE the first paint so code fences come up already
         // token-colored — a post-paint setState would flash flat text.
         _palettes = await NativePalettes.ensureLoaded(_renderer);
+        if (treeContainsMermaid(_tree!)) {
+          _mermaidBridge = MermaidBridge(renderer: _renderer);
+        }
         // A search-result initialLine beats the persisted line, same
         // one-shot priority as the webview path — consumed here (the
         // native list paints there; a later engine switch must not
@@ -456,6 +454,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
       resolveBytes: (relPath) => vault.resolveRelative(widget.entry, relPath),
     ).call;
     _palettes ??= await NativePalettes.ensureLoaded(_renderer);
+    _mermaidBridge ??= treeContainsMermaid(tree)
+        ? MermaidBridge(renderer: _renderer)
+        : null;
     if (!mounted) return;
     final line = docState.activeLine;
     _setUpNativeScroll(
@@ -652,9 +653,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
   /// - [LinkInternalMd] → resolve against this entry's directory and
   ///   push a Reader on BOTH platforms — natively retiring the v1
   ///   webview path's Android internal-nav no-op.
+  /// - [LinkFragment] → [_jumpToFragment]: resolves against this
+  ///   document's own headings (`anchorId`), the native equivalent of
+  ///   the webview engine's in-page anchor jump.
   /// - [LinkDecline] → no-op (mailto/tel/data/about/unknown, non-md
-  ///   targets, and pure `#fragment` anchors — the latter a documented
-  ///   v2 native limitation; the webview engine handles them in-page).
+  ///   targets, pure `?query`).
   void _handleNativeLinkTap(String url, bool blocked, String? source) {
     if (blocked) return;
     switch (decideLinkTap(url, platform: defaultTargetPlatform)) {
@@ -662,9 +665,32 @@ class _ReaderScreenState extends State<ReaderScreen> {
         unawaited(_openExternal(uri));
       case LinkInternalMd(:final target):
         unawaited(_openInternalMd(target));
+      case LinkFragment(:final fragment):
+        unawaited(_jumpToFragment(fragment));
       case LinkDecline():
         break;
     }
+  }
+
+  /// The native half of `#fragment`-only link navigation: scrolls to the
+  /// heading in THIS document whose `anchorId` matches [fragment]. A
+  /// no-op if no such heading exists or the native scroll plumbing isn't
+  /// active (e.g. the document is currently on the webview engine, which
+  /// handles its own in-page anchors and never routes through here).
+  Future<void> _jumpToFragment(String fragment) async {
+    await _nativeScroll?.scrollToAnchor(fragment);
+  }
+
+  /// The native engine's footnote-reference-marker tap
+  /// ([NativeDocView.onFootnoteRefTap]): jumps to the trailing footnotes
+  /// section (every definition renders inside that ONE list item —
+  /// `MdvDocumentAdapter` has no per-definition scroll target yet, so
+  /// this can't land on the exact matching definition among several;
+  /// see README's Known limitations). [index] (the tapped
+  /// [MdvFootnoteRef.index]) is unused for that reason — every ref jumps
+  /// to the same section.
+  void _handleFootnoteRefTap(int index) {
+    unawaited(_nativeScroll?.scrollToFootnotes());
   }
 
   /// The native half of internal `.md` navigation: same
@@ -898,10 +924,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
             itemPositionsListener: scroll.itemPositionsListener,
             initialScrollIndex: _nativeInitialIndex,
             onLinkTap: _handleNativeLinkTap,
+            onFootnoteRefTap: _handleFootnoteRefTap,
             imageProvider: _nativeImageResolver,
             // Picked per build so a theme flip swaps palettes in place
             // (no reload, no renderTree) — same mechanism as baseStyle.
             palette: _palettes?.forBrightness(Theme.of(context).brightness),
+            mermaidBridge: _mermaidBridge,
           );
         }
         return WebViewWidget(controller: _ensureController());
@@ -1455,6 +1483,57 @@ class NativeReaderScroll {
   /// (see [initialScrollIndex]) or the controller isn't attached yet.
   Future<void> scrollToLine(int line) async {
     final index = _adapter.blockIndexForLine(line);
+    if (index == null || !itemScrollController.isAttached) return;
+    await itemScrollController.scrollTo(
+      index: index,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.ease,
+    );
+  }
+
+  /// The index of the TOP-LEVEL heading whose `anchorId` matches
+  /// [anchorId] — the `#fragment`-only link nav primitive
+  /// (link_policy.dart's [LinkFragment]). Only top-level blocks are
+  /// searched (headings nested inside a blockquote/list/admonition have
+  /// no individually-addressable item to scroll to — the same
+  /// per-item, not per-node, granularity `blockIndexForLine` already
+  /// has). Null when no heading carries that anchor.
+  int? indexForAnchor(String anchorId) {
+    final blocks = _adapter.tree.blocks;
+    for (var i = 0; i < blocks.length; i++) {
+      final block = blocks[i];
+      if (block is MdvHeading && block.anchorId == anchorId) return i;
+    }
+    return null;
+  }
+
+  /// Jumps to the heading whose `anchorId` matches [anchorId], via a
+  /// short animated scroll. No-op when no such heading exists or the
+  /// controller isn't attached yet.
+  Future<void> scrollToAnchor(String anchorId) async {
+    final index = indexForAnchor(anchorId);
+    if (index == null || !itemScrollController.isAttached) return;
+    await itemScrollController.scrollTo(
+      index: index,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.ease,
+    );
+  }
+
+  /// The trailing footnotes section's item index, or null when the
+  /// document has no footnotes (mirrors `MdvDocumentAdapter.itemCount`'s
+  /// "+1 only if `tree.footnotes` is non-empty" rule).
+  int? get footnotesIndex =>
+      _adapter.tree.footnotes.isEmpty ? null : _adapter.tree.blocks.length;
+
+  /// A footnote-reference-marker tap's target: every definition renders
+  /// inside the ONE trailing footnotes item (`MdvDocumentAdapter` has no
+  /// per-definition scroll target), so this jumps to that item as a
+  /// whole rather than the specific definition tapped — see README's
+  /// Known limitations. No-op when the document has no footnotes or the
+  /// controller isn't attached yet.
+  Future<void> scrollToFootnotes() async {
+    final index = footnotesIndex;
     if (index == null || !itemScrollController.isAttached) return;
     await itemScrollController.scrollTo(
       index: index,

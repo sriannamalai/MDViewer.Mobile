@@ -38,9 +38,13 @@ enum ReaderEngine {
 }
 
 /// Whether the tree contains at least one diagram addressed to the
-/// `mermaid` engine — the auto-detection input to [resolveEngine]
-/// (mermaid renders only on the webview engine until the offscreen-SVG
-/// fast-follow).
+/// `mermaid` engine — used to decide, lazily, whether the native
+/// engine needs to spin up a [MermaidBridge] (an offscreen webview) for
+/// this document at all; a document with no mermaid diagram must not
+/// pay for one it never uses. No longer drives engine SELECTION — the
+/// native engine renders mermaid diagrams itself (see
+/// `mermaid_bridge.dart`), retiring the old "auto-Webview on Mermaid"
+/// rule.
 ///
 /// Recursive over every container the version-1 schema nests blocks in:
 /// blockQuote, admonition, list items ([MdvListItem] is not itself an
@@ -83,19 +87,12 @@ bool _blockContainsMermaid(MdvBlock block) {
   };
 }
 
-/// Resolves the engine for a document. Precedence, exactly:
-///
-/// 1. [persistedOverride] — the user's per-document choice is absolute
-///    in BOTH directions (an explicit `native` on a mermaid document
-///    yields native; the diagrams degrade, by the user's own call).
-/// 2. else [hasMermaid] → [ReaderEngine.webview].
-/// 3. else [ReaderEngine.native].
-ReaderEngine resolveEngine({
-  required ReaderEngine? persistedOverride,
-  required bool hasMermaid,
-}) {
-  if (persistedOverride != null) return persistedOverride;
-  return hasMermaid ? ReaderEngine.webview : ReaderEngine.native;
+/// Resolves the engine for a document: [persistedOverride] (the user's
+/// per-document choice, from the Aa sheet's Engine row) wins outright;
+/// absent an override, every document defaults to [ReaderEngine.native]
+/// — mermaid no longer forces webview (see [treeContainsMermaid]'s doc).
+ReaderEngine resolveEngine({required ReaderEngine? persistedOverride}) {
+  return persistedOverride ?? ReaderEngine.native;
 }
 
 // Per-document prefs keys. All three reader keys share one namespace

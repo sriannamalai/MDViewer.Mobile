@@ -1,0 +1,113 @@
+name: Release artifacts
+on:
+  release: {types: [published]}
+permissions:
+  contents: write
+env:
+  TAG: ${{ github.event.release.tag_name }}
+jobs:
+  # Android: a release APK (installable directly) and an AAB (Play-Store
+  # upload format). Signed with the debug key for now — see
+  # android/app/build.gradle.kts's TODO — so these are sideload/testing
+  # artifacts, not a Play Store-ready release.
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run: {shell: bash}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: '${{ github.event.release.tag_name }}'
+          submodules: recursive
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with: {channel: stable}
+      - run: scripts/bootstrap.sh
+      - run: flutter pub get
+        working-directory: app
+      - name: Build
+        run: |
+          flutter build apk --release
+          flutter build appbundle --release
+        working-directory: app
+      - name: Package
+        run: |
+          ver="${TAG#v}"
+          apk="mdviewer-mobile-${ver}-android.apk"
+          aab="mdviewer-mobile-${ver}-android.aab"
+          cp app/build/app/outputs/flutter-apk/app-release.apk "$apk"
+          cp app/build/app/outputs/bundle/release/app-release.aab "$aab"
+          echo "APK=$apk" >> "$GITHUB_ENV"
+          echo "AAB=$aab" >> "$GITHUB_ENV"
+      - name: Upload to release
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: gh release upload "$TAG" "$APK" "$AAB" --clobber
+      - name: Record checksums
+        run: sha256sum "$APK" "$AAB" > android.sha256
+      - uses: actions/upload-artifact@v4
+        with: {name: sha256-android, path: android.sha256}
+
+  # iOS: an unsigned Runner.app archive. There is no distribution
+  # certificate in this repo, so this is a build-verification artifact
+  # for sideloading via a developer's own signing (e.g. Xcode's "Personal
+  # Team" re-sign), not an App Store/TestFlight-ready .ipa.
+  ios:
+    runs-on: macos-14
+    defaults:
+      run: {shell: bash}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: '${{ github.event.release.tag_name }}'
+          submodules: recursive
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with: {channel: stable}
+      - run: scripts/bootstrap.sh
+      - run: flutter pub get
+        working-directory: app
+      - name: Build (unsigned)
+        working-directory: app
+        # See ci.yml's ios-build job for why the retry exists.
+        run: |
+          flutter build ios --release --no-codesign || {
+            echo "::warning::first iOS build failed (likely the known -force_load ordering quirk) — retrying once"
+            flutter build ios --release --no-codesign
+          }
+      - name: Package
+        run: |
+          ver="${TAG#v}"
+          zip="mdviewer-mobile-${ver}-ios-unsigned.zip"
+          cp LICENSE app/build/ios/iphoneos/
+          (cd app/build/ios/iphoneos && zip -r "../../../../$zip" Runner.app LICENSE)
+          echo "ZIP=$zip" >> "$GITHUB_ENV"
+      - name: Upload to release
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: gh release upload "$TAG" "$ZIP" --clobber
+      - name: Record checksum
+        run: shasum -a 256 "$ZIP" > ios.sha256
+      - uses: actions/upload-artifact@v4
+        with: {name: sha256-ios, path: ios.sha256}
+
+  # Aggregates every job's per-artifact checksum into one SHA256SUMS file
+  # (standard `sha256sum` format, sorted by filename) and uploads it as
+  # a release asset, so consumers can `sha256sum -c` downloads.
+  checksums:
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    defaults:
+      run: {shell: bash}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sha256-*
+          path: sums
+          merge-multiple: true
+      - name: Aggregate and upload SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cat sums/*.sha256 | LC_ALL=C sort -k2 > SHA256SUMS
+          # One line per shipped artifact: apk + aab + ios zip.
+          test "$(wc -l < SHA256SUMS)" -eq 3
+          cat SHA256SUMS
+          gh release upload "$TAG" SHA256SUMS --clobber

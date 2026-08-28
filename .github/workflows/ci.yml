@@ -1,0 +1,68 @@
+name: CI
+on:
+  push: {branches: [main]}
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  # Format, static analysis, and the Dart test suite — the renderer is
+  # faked here (see README's Test section), so no device/emulator is
+  # needed and this can run on Linux.
+  format-analyze-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: {submodules: recursive}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with: {channel: stable}
+      - run: scripts/bootstrap.sh
+      - run: flutter pub get
+        working-directory: app
+      - run: dart format --set-exit-if-changed .
+        working-directory: app
+      - run: flutter analyze
+        working-directory: app
+      - run: flutter test
+        working-directory: app
+
+  # Android build verification — exercises the plugin's bundled jniLibs
+  # (fetched by bootstrap.sh) end to end through a real Gradle build.
+  # release builds sign with the debug key for now (see
+  # android/app/build.gradle.kts), so no signing secrets are needed.
+  android-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: {submodules: recursive}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with: {channel: stable}
+      - run: scripts/bootstrap.sh
+      - run: flutter pub get
+        working-directory: app
+      - run: flutter build apk --release
+        working-directory: app
+
+  # iOS build verification — exercises the plugin's xcframework (fetched
+  # by bootstrap.sh) through CocoaPods + Xcode. Unsigned (--no-codesign):
+  # this repo has no distribution certificate, so CI only verifies the
+  # app builds and links, not that it's installable on a device.
+  ios-build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+        with: {submodules: recursive}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with: {channel: stable}
+      - run: scripts/bootstrap.sh
+      - run: flutter pub get
+        working-directory: app
+      - name: Build iOS (unsigned)
+        working-directory: app
+        # README's "Known iOS quirk": the first build after a fresh `pod
+        # install` can fail on -force_load path resolution (an Xcode
+        # build-ordering issue) — retry once before failing the job.
+        run: |
+          flutter build ios --release --no-codesign || {
+            echo "::warning::first iOS build failed (likely the known -force_load ordering quirk) — retrying once"
+            flutter build ios --release --no-codesign
+          }

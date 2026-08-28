@@ -3,6 +3,8 @@ import 'package:mdviewer/mdviewer.dart';
 import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
+import '../render/mermaid_bridge.dart';
+import '../render/mermaid_diagram_view.dart';
 import '../state/app_state.dart';
 
 /// The native engine's document content — plugin 0.10.1's
@@ -57,8 +59,10 @@ class NativeDocView extends StatelessWidget {
     required this.itemPositionsListener,
     this.initialScrollIndex = 0,
     this.onLinkTap,
+    this.onFootnoteRefTap,
     this.imageProvider,
     this.palette,
+    this.mermaidBridge,
   });
 
   /// The document's typed render tree — built exactly once per document
@@ -82,6 +86,11 @@ class NativeDocView extends StatelessWidget {
   /// styled but inert (blocked links are always inert, plugin-side).
   final MdvLinkTapCallback? onLinkTap;
 
+  /// Footnote-reference-marker taps, routed to the Reader's
+  /// jump-to-footnotes handling; null renders every marker inert
+  /// (superscript-only).
+  final MdvFootnoteRefTapCallback? onFootnoteRefTap;
+
   /// Image resolution (`native_images.dart`'s `NativeImageResolver`).
   /// MUST be a long-lived object, not an inline closure: the plugin
   /// re-resolves whenever this compares unequal across builds.
@@ -98,6 +107,12 @@ class NativeDocView extends StatelessWidget {
   /// re-render and no async gap.
   final MdvPalette? palette;
 
+  /// Renders `mermaid` diagrams to real SVG via an offscreen webview;
+  /// null (no mermaid diagram in this document — the Reader gates
+  /// creation on `treeContainsMermaid`) keeps the library's default
+  /// bordered placeholder for every diagram block.
+  final MermaidBridge? mermaidBridge;
+
   // Stateless by design: every field is host-owned (the Reader holds the
   // tree, controller/listener, resolver), and the per-build adapter is
   // the styling mechanism — there is nothing to keep in State. (Task 4's
@@ -107,6 +122,7 @@ class NativeDocView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textScale = context.watch<AppState>().textScale;
+    final bridge = mermaidBridge;
     final adapter = MdvDocumentAdapter(
       tree,
       // The loaded palette for this brightness when the host has one
@@ -116,10 +132,22 @@ class NativeDocView extends StatelessWidget {
       palette: palette,
       baseStyle: TextStyle(fontSize: 16 * textScale),
       onLinkTap: onLinkTap,
+      onFootnoteRefTap: onFootnoteRefTap,
       imageProvider: imageProvider,
       selectable: true,
+      builders: bridge == null
+          ? const MdvBuilders()
+          : MdvBuilders(
+              diagram: (context, node, defaultChild) => node.engine == 'mermaid'
+                  ? MermaidDiagramView(
+                      node: node,
+                      bridge: bridge,
+                      fallback: defaultChild,
+                    )
+                  : defaultChild,
+            ),
     );
-    return adapter.wrap(
+    final list = adapter.wrap(
       context,
       ScrollablePositionedList.builder(
         itemCount: adapter.itemCount,
@@ -130,5 +158,9 @@ class NativeDocView extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
       ),
     );
+    // The bridge's hidden webview must be mounted to run JS at all (see
+    // MermaidBridge's class doc) — stacked underneath, never painted
+    // over the document (Offstage excludes it from hit-testing/paint).
+    return bridge == null ? list : Stack(children: [list, bridge.attach()]);
   }
 }
