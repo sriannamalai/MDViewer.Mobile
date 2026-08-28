@@ -27,6 +27,26 @@ finds is this app's own to close (in the library first if it needs a new
 primitive, then here) — it is not a signal to move Mobile onto Desktop's
 HTML pipeline instead.
 
+### Engine version sync checklist
+Run this on every core library release (MarkDownViewer's own `AGENTS.md`
+keeps the authoritative copy of this list — update both if it changes):
+1. Check the library's `CHANGELOG.md` for the new `v<ver>`/`flutter-v<ver>`
+   tags and what changed (new primitives, breaking changes, plugin API
+   additions).
+2. Bump the `vendor/markdownviewer` submodule to the new `flutter-v<ver>`
+   tag (see README's "How the submodule is pinned").
+3. Re-test dual-engine parity — native vs. Webview must render the same
+   document consistently (`flutter test`, plus a manual per-doc engine
+   switch check via the Reader's "Aa" sheet).
+4. Update `scripts/bootstrap.sh` / `README.md` if either hardcodes the
+   pinned tag or checksum references.
+5. Update this file's "Finished so far" section with what actually shipped
+   on the Mobile side, and confirm the sibling repos' `AGENTS.md` files
+   were updated too (Desktop's pin + this checklist; the library's
+   "Finished so far").
+Current pinned version/path: submodule `flutter-v0.11.0` tag (native
+binaries v0.11.0), native render tree default with Webview fallback.
+
 ## The sibling repos (the bigger picture)
 - **`~/Developer/OpenSource/MarkDownViewer`** — the rendering engine. This
   app is the most advanced consumer of it: it's the first host to exercise
