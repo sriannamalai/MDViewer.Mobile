@@ -7,10 +7,9 @@ status, or roadmap materially changes.
 A read-only Markdown viewer for iOS/Android, built with **Flutter**,
 consuming the [MarkDownViewer](https://github.com/sriannamalai/markdownviewer)
 Go library through its Flutter plugin (`flutter/mdviewer`, vendored here as
-a git submodule at `vendor/markdownviewer` — currently pinned to a raw
-commit on the library's `sync/core-engine-gaps` branch, not yet a
-`flutter-v*` tag; see README's "How the submodule is pinned"; underlying
-native binaries stay v0.10.0). ~40 commits, app version `1.0.0+1`,
+a git submodule at `vendor/markdownviewer` — pinned to the library's
+`flutter-v0.11.0` tag; see README's "How the submodule is pinned";
+underlying native binaries are v0.11.0). ~40 commits, app version `1.0.0+1`,
 currently at "v2" per its own README (dual-engine reader) — most mature
 of the two apps.
 
@@ -31,12 +30,11 @@ HTML pipeline instead.
 ## The sibling repos (the bigger picture)
 - **`~/Developer/OpenSource/MarkDownViewer`** — the rendering engine. This
   app is the most advanced consumer of it: it's the first host to exercise
-  the v0.10 **native render tree** (`MdvDocumentView`/`MdvDocumentAdapter`)
+  the native **render tree** (`MdvDocumentView`/`MdvDocumentAdapter`)
   end-to-end, rather than just HTML-in-a-webview. Bugs found here often get
   fixed upstream first, then this repo bumps the `vendor/markdownviewer`
-  submodule to a new `flutter-v<ver>` tag (a raw commit SHA is a temporary
-  exception while the current fixes are pinned pre-tag — see that repo's
-  `CONTRIBUTING.md`; re-pin to a tag once one exists).
+  submodule to a new `flutter-v<ver>` tag (see that repo's
+  `CONTRIBUTING.md`'s Releasing section).
 - **`~/Developer/OpenSource/MDViewer.Desktop`** — the Tauri sibling app.
   Same design identity (`design/TOKENS.md` here is byte-identical to that
   repo's copy — keep in sync on change) and the same underlying rendering
@@ -116,9 +114,8 @@ Chronologically (see `git log --oneline`), grouped:
   pipeline (format/analyze/test + Android/iOS build verification, and
   packaged APK/AAB/unsigned-iOS-archive releases with checksums);
   consumed the library's CRLF code-fence fix, `FootnoteRef.DefID`/
-  `Tree.FootnoteByIndex` primitive, and `mermaid-bridge.js` primitive
-  (re-pinning `vendor/markdownviewer` to a raw commit pre-tag); proposed
-  and got merged a small additive plugin API,
+  `Tree.FootnoteByIndex` primitive, and `mermaid-bridge.js` primitive;
+  proposed and got merged a small additive plugin API,
   `MdvRenderScope`/`MdvDocumentAdapter`/`MdvDocumentView.onFootnoteRefTap`
   (mirrors `onLinkTap`) — the typed model had no way to intercept a
   footnote-ref tap at all before this; dropped the auto-Webview-on-Mermaid
@@ -129,7 +126,9 @@ Chronologically (see `git log --oneline`), grouped:
   `MdvHeading.anchorId` (`link_policy.dart`'s new `LinkFragment`
   decision); footnote-ref taps now jump to the trailing footnotes section
   (not yet the exact definition — see Known limitations); removed the
-  CRLF syntax-highlighting limitation note (confirmed fixed upstream).
+  CRLF syntax-highlighting limitation note (confirmed fixed upstream);
+  re-pinned `vendor/markdownviewer` to the released `flutter-v0.11.0` tag
+  once the library cut it (was a raw pre-tag commit pin during this pass).
 
 ## Known limitations (v2, per README — organized by engine)
 **Native engine only:** pure `#fragment` links jump to a matching HEADING
@@ -159,26 +158,22 @@ document body uses the system font stack, not the design's custom fonts
 Since this app is explicitly the "native-render validation" testbed the
 core library's roadmap calls for, its own next steps are largely the same
 list, from this app's side:
-1. Re-pin `vendor/markdownviewer` to a proper `flutter-v*` tag once the
-   library cuts one covering the CRLF fix / footnote linkage / mermaid
-   bridge / `onFootnoteRefTap` commits this app currently pins to a raw
-   commit for.
-2. **Remaining native-engine gaps**: per-definition footnote scroll
+1. **Remaining native-engine gaps**: per-definition footnote scroll
    (needs a finer-grained scroll target than `MdvDocumentAdapter`'s one
    combined footnotes item — likely a plugin-side change, e.g. splitting
    the footnotes section into individually keyed/positioned items);
    `#fragment` nav for non-heading anchors; a Mermaid diagram re-rendering
    on a theme flip after first render; back-stack harmonization for
    relative `.md` links (native push vs. Webview replace).
-3. Multi-vault support and PDF export are explicitly out of scope for the
+2. Multi-vault support and PDF export are explicitly out of scope for the
    current version but flagged as desired follow-ups per the "Known
    limitations" list.
-4. Now that `.github/workflows/ci.yml`/`release.yml` exist, keep them
+3. Now that `.github/workflows/ci.yml`/`release.yml` exist, keep them
    current as the toolchain/plugin evolve (Flutter version bumps, new
    release-artifact needs); revisit signing (currently debug-signed
    Android / unsigned iOS release artifacts) if real distribution is ever
    needed.
-5. Keep the `vendor/markdownviewer` submodule pin current as the library
+4. Keep the `vendor/markdownviewer` submodule pin current as the library
    ships new `flutter-v<ver>` tags — check the library's `CHANGELOG.md`
    for Flutter-relevant changes each time.
 

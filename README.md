@@ -20,25 +20,15 @@ rendering engine as a git submodule (`vendor/markdownviewer`) plus its
 released, checksum-verified mobile binaries — nothing here builds Go or
 touches a Go toolchain.
 
-**How the submodule is pinned:** `vendor/markdownviewer` is currently
-pinned to a raw commit on the library's `sync/core-engine-gaps` branch
-(CRLF code-fence highlighting fix, the `FootnoteRef.DefID`/
-`Tree.FootnoteByIndex` footnote-definition linkage, the `mermaid-bridge.js`
-offscreen-rendering primitive, and an additive `onFootnoteRefTap`
-plugin callback) — not yet released as a `flutter-v*` tag. Re-pin to the
-first `flutter-v*` tag that includes this commit once the library cuts
-one (see the library's own tagging convention below); the pinned mobile
-binaries stay `v0.10.0` either way — none of the above changed the native
-C ABI or its artifacts.
-
-Once tagged, the convention resumes: since v0.7.1 the library cuts a
-`flutter-vX.Y.Z` tag on the commit whose plugin `pubspec.yaml` and
-`tool/checksums.txt` both carry that release — so the tag's
-`fetch_binaries.sh` can verify and download the matching
-`libmdviewer-0.10.0-*.zip` release artifacts directly. (The v0.7.0 era
-predated those tags: the checksums landed on `main` *after* the `v0.7.0`
-tag was cut, which forced a raw-commit pin back then — that rationale is
-obsolete for any *tagged* pin.)
+**How the submodule is pinned:** `vendor/markdownviewer` is pinned to the
+library's `flutter-v0.11.0` tag (CRLF code-fence highlighting fix, the
+`FootnoteRef.DefID`/`Tree.FootnoteByIndex` footnote-definition linkage,
+the `mermaid-bridge.js` offscreen-rendering primitive, and an additive
+`onFootnoteRefTap` plugin callback), with matching native binaries at
+`v0.11.0`. Since v0.7.1 the library cuts a `flutter-vX.Y.Z` tag on the
+commit whose plugin `pubspec.yaml` and `tool/checksums.txt` both carry
+that release — so the tag's `fetch_binaries.sh` can verify and download
+the matching `libmdviewer-0.11.0-*.zip` release artifacts directly.
 
 1. **Prerequisites**: Flutter 3.44.x, Xcode + an iOS simulator runtime
    (iOS 15.0+ deployment target), Android SDK + an AVD (or a physical

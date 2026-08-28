@@ -10,6 +10,45 @@ labels this repo already uses in its own `README.md`/`AGENTS.md` (**v1**, the
 Webview-only reader; **v2**, the dual-engine reader), plus point-releases for
 notable additions shipped after a milestone closed.
 
+## [v2.2] - 2026-08-28
+
+Cross-Repo Rendering Engine Synchronization Plan, Phase 2: consumes the
+core library's gap-train fixes, closes the auto-Webview-on-Mermaid
+fallback, and adds a CI/release-artifact pipeline.
+
+### Added
+
+- **Native Mermaid rendering.** `MermaidBridge`
+  (`lib/src/render/mermaid_bridge.dart`) drives a hidden offscreen
+  `webview_flutter` instance running the library's `mermaid.js` +
+  `mermaid-bridge.js` assets; each diagram renders to SVG via
+  `mdvRenderMermaid` and displays through `flutter_svg`, falling back to
+  the library's placeholder on any failure. Dropped the
+  auto-Webview-on-Mermaid rule in `engine_policy.dart` — native is now
+  always the default engine, Mermaid included.
+- **`#fragment`-only link navigation** — a new `LinkFragment` decision in
+  `link_policy.dart`, resolved against the current document's
+  `MdvHeading.anchorId`s (heading anchors only; see Known limitations).
+- **`.github/workflows/ci.yml` / `release.yml`** — format/analyze/test +
+  Android/iOS build verification, and a release-artifact pipeline
+  (APK/AAB + unsigned iOS archive + checksums) mirroring
+  `MarkDownViewer`'s release strategy.
+- `CHANGELOG.md` (this file).
+
+### Changed
+
+- Proposed and got merged a small additive plugin API,
+  `MdvFootnoteRefTapCallback`/`onFootnoteRefTap` on
+  `MdvRenderScope`/`MdvDocumentAdapter`/`MdvDocumentView` (mirrors
+  `onLinkTap`) — the typed model had no way to intercept a footnote-ref
+  tap at all before this. Footnote-ref taps now jump to the trailing
+  footnotes section (not yet the exact definition — see Known
+  limitations).
+- Bumped the `vendor/markdownviewer` submodule to `flutter-v0.11.0`
+  (`v0.11.0` native binaries) — consumes the CRLF code-fence highlighting
+  fix (removed the corresponding native-engine limitation note),
+  `FootnoteRef.DefID`/`Tree.FootnoteByIndex`, and `mermaid-bridge.js`.
+
 ## [v2.1] - 2026-08-28
 
 Native-engine image support catches up with Webview, plus a persistent
