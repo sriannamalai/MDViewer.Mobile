@@ -758,8 +758,9 @@ void main() {
     );
   });
 
-  testWidgets('a mermaid document auto-selects the WEBVIEW engine '
-      '(one detection renderTree, then the v1 pipeline)', (tester) async {
+  testWidgets('a mermaid document resolves to the NATIVE engine and creates '
+      'an offscreen mermaid-bridge webview (not the visible ScrollSpy/'
+      'CodeCopy one) — mermaid no longer forces webview', (tester) async {
     final entry = _sampleEntry();
     final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
     final appState = AppState();
@@ -771,12 +772,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(NativeDocView), findsNothing);
+    expect(find.byType(NativeDocView), findsOneWidget);
+    // The ONE controller here is the hidden mermaid bridge (MermaidBridge
+    // lazily creates it because treeContainsMermaid(fakeMermaidTree) is
+    // true) — not the visible webview engine, which never activates. On
+    // this fake renderer `asset()` throws (no reachable libmdviewer), so
+    // the bridge's own load never gets far enough to call
+    // loadHtmlString/addJavaScriptChannel; it degrades to the diagram
+    // placeholder, never crashing.
     final controller = platform.controllers.single;
-    expect(controller.loadedHtml, contains('data-md-line="1"'));
-    expect(controller.channels.keys, containsAll(['ScrollSpy', 'CodeCopy']));
+    expect(controller.loadedHtml, isNull);
+    expect(controller.channels.keys, isNot(contains('ScrollSpy')));
     expect(renderer.renderTreeCalls, 1);
-    expect(renderer.renderCalls, 1);
+    expect(
+      renderer.renderCalls,
+      0,
+      reason: 'no HTML render on the native path',
+    );
   });
 
   testWidgets(
@@ -825,7 +837,13 @@ void main() {
 
     expect(find.byType(NativeDocView), findsOneWidget);
     expect(find.text(fakeTreeHeadingText), findsOneWidget);
-    expect(platform.controllers, isEmpty);
+    // One controller: the hidden mermaid bridge (see the auto-select
+    // test above) — the visible webview engine still never activates.
+    expect(platform.controllers, hasLength(1));
+    expect(
+      platform.controllers.single.channels.keys,
+      isNot(contains('ScrollSpy')),
+    );
     expect(renderer.renderTreeCalls, 1);
   });
 

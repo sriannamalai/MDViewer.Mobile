@@ -70,11 +70,31 @@ final class LinkInternalMd extends LinkDecision {
   String toString() => 'LinkInternalMd($target)';
 }
 
+/// A pure `#fragment` link (no file target): jump to the heading in
+/// THIS document whose `anchorId` matches [fragment], the native
+/// equivalent of a browser's in-page anchor jump. [fragment] is the
+/// decoded fragment text (no leading `#`), never empty (an empty or
+/// absent fragment is a [LinkDecline], not this).
+final class LinkFragment extends LinkDecision {
+  const LinkFragment(this.fragment);
+
+  final String fragment;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LinkFragment && other.fragment == fragment;
+
+  @override
+  int get hashCode => Object.hash(LinkFragment, fragment);
+
+  @override
+  String toString() => 'LinkFragment($fragment)';
+}
+
 /// Everything else is an explicit no-op: `mailto:`/`tel:`/`data:`/
-/// `file:`/`about:`/unknown schemes, non-Markdown relative targets,
-/// pure `#fragment` links (anchor jumps are line-less — a documented v2
-/// native limitation, 1.0-train candidate; the webview engine handles
-/// them in-page), and anything [Uri.tryParse] cannot parse.
+/// `file:`/`about:`/unknown schemes, non-Markdown relative targets, a
+/// pure `?query` (no fragment), and anything [Uri.tryParse] cannot
+/// parse.
 final class LinkDecline extends LinkDecision {
   const LinkDecline();
 
@@ -96,11 +116,12 @@ final class LinkDecline extends LinkDecision {
 /// | unparseable                                 | [LinkDecline]      |
 /// | `http:`/`https:` (any case — Uri normalizes)| [LinkExternal]     |
 /// | scheme-less ending `.md`/`.markdown` (any   | [LinkInternalMd]   |
-/// |   case), after `#`/`?` stripping            |                    |
+///   case), after `#`/`?` stripping            |                    |
+/// | scheme-less, pure `#fragment` (non-empty)   | [LinkFragment]     |
 /// | scheme-less, anything else (non-md target,  | [LinkDecline]      |
-/// |   pure `#fragment`, pure `?query`)          |                    |
+///   pure `?query`, or an empty `#`)           |                    |
 /// | every other scheme (`mailto:`, `tel:`,      | [LinkDecline]      |
-/// |   `data:`, `file:`, `about:`, unknown)      |                    |
+///   `data:`, `file:`, `about:`, unknown)      |                    |
 ///
 /// [platform] is deliberately required even though today's table is
 /// platform-uniform — v1's one platform split (Android's internal-nav
@@ -120,7 +141,13 @@ LinkDecision decideLinkTap(String url, {required TargetPlatform platform}) {
     // Same stripping the webview's _openInternalRelative applies: the
     // raw href minus any fragment/query suffix.
     final target = url.split('#').first.split('?').first;
-    if (target.isEmpty) return const LinkDecline(); // pure #fragment/?query
+    if (target.isEmpty) {
+      // pure #fragment (anchor jump) or pure ?query (nothing to do).
+      if (uri.hasFragment && uri.fragment.isNotEmpty) {
+        return LinkFragment(uri.fragment);
+      }
+      return const LinkDecline();
+    }
     final lower = target.toLowerCase();
     if (!lower.endsWith('.md') && !lower.endsWith('.markdown')) {
       return const LinkDecline();
