@@ -618,11 +618,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   /// Internal relative `.md` link handling (design/README.md §Interactions):
-  /// looked up against [VaultState] and, if found, replaces this Reader
-  /// (`pushReplacement`) with a new one for the resolved entry. Anything
-  /// that isn't a resolvable `.md`/`.markdown` target is a no-op — the
-  /// brief's documented v1 behavior, not a bug (wiki-links and links to
-  /// files outside the vault have nowhere to navigate to).
+  /// looked up against [VaultState] and, if found, PUSHES
+  /// ([pushReader]) a new Reader for the resolved entry — back returns to
+  /// the linking document. Harmonized with the native engine's
+  /// [_openInternalMd] (issue #6): both engines used to disagree here (this
+  /// path replaced the current Reader; native always pushed), a real
+  /// cross-engine back-stack difference on iOS where the webview path's
+  /// replace actually ran (Android's `loadHtmlString` never even reaches
+  /// this method — see §Known limitations). Push is the one that keeps a
+  /// reading trail across an arbitrary chain of relative links, so it's
+  /// now the standard for both. Anything that isn't a resolvable
+  /// `.md`/`.markdown` target is a no-op — the brief's documented v1
+  /// behavior, not a bug (wiki-links and links to files outside the vault
+  /// have nowhere to navigate to).
   Future<void> _openInternalRelative(String href) async {
     final target = href.split('#').first.split('?').first;
     if (target.isEmpty) return;
@@ -636,9 +644,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final found = vault.findByRelPath(widget.entry.source, resolved);
     if (found == null || !mounted) return;
 
-    await Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(builder: (_) => ReaderScreen(entry: found)),
-    );
+    await pushReader(context, found);
   }
 
   /// The native engine's link taps ([NativeDocView.onLinkTap]), routed
@@ -652,7 +658,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
   /// - [LinkExternal] → the same [_openExternal] the webview path uses.
   /// - [LinkInternalMd] → resolve against this entry's directory and
   ///   push a Reader on BOTH platforms — natively retiring the v1
-  ///   webview path's Android internal-nav no-op.
+  ///   webview path's Android internal-nav no-op (and, as of issue #6,
+  ///   matching [_openInternalRelative]'s push on the webview's iOS
+  ///   path too — one back-stack behavior regardless of engine).
   /// - [LinkFragment] → [_jumpToFragment]: resolves against this
   ///   document's own headings (`anchorId`), the native equivalent of
   ///   the webview engine's in-page anchor jump.
@@ -694,12 +702,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   /// The native half of internal `.md` navigation: same
-  /// [VaultPath.resolve] + [VaultState.findByRelPath] lookup the webview
-  /// path performs, but the destination is PUSHED ([pushReader]) rather
-  /// than replacing this Reader — back returns to the linking document.
-  /// Unresolvable targets (absolute paths, vault escapes, files not in
-  /// the vault) are a no-op, matching the webview path's documented
-  /// behavior.
+  /// [VaultPath.resolve] + [VaultState.findByRelPath] lookup
+  /// [_openInternalRelative] (the webview path) performs, and — since
+  /// issue #6 harmonized both engines onto the same PUSH ([pushReader])
+  /// behavior — the exact same navigation action. Unresolvable targets
+  /// (absolute paths, vault escapes, files not in the vault) are a
+  /// no-op, matching the webview path's documented behavior.
   Future<void> _openInternalMd(String target) async {
     final resolved = VaultPath.resolve(widget.entry.relPath, target);
     if (resolved == null || !mounted) return;

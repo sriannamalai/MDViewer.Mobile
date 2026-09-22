@@ -446,6 +446,39 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
+  testWidgets('a webview relative .md link tap PUSHES a Reader, matching the '
+      'native engine (issue #6 — the two engines used to disagree, this '
+      'path replaced the current Reader instead)', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(
+      entry,
+      '# Hello\n\none two three\n',
+      extraFiles: {'Other.md': _bytes('# Other\n')},
+    );
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final decide =
+        platform.controllers.single.navigationDelegate!.onNavigationRequest!;
+    await decide(const NavigationRequest(url: 'Other.md', isMainFrame: true));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byType(ReaderScreen, skipOffstage: false),
+      findsNWidgets(2),
+      reason:
+          'pushed (pushReader), not replaced — back returns to the '
+          'linking document, same as the native engine',
+    );
+    expect(find.text('Other.md'), findsWidgets);
+  });
+
   testWidgets(
     'restores a persisted scroll position once the page finishes loading',
     (tester) async {
