@@ -1626,23 +1626,38 @@ class _SheetActionButton extends StatelessWidget {
 ///   SAME payload type and state object the webview path feeds, reused
 ///   verbatim, so hairline/section·%/outline-active-row light up
 ///   identically on both engines.
-/// - **Progress** — `(topmostIndex + consumedFractionOfIt) / itemCount`,
-///   clamped to 0..1, where the consumed fraction is how much of the
-///   topmost item has scrolled above the viewport top. A BLOCK-WEIGHTED
-///   approximation by design (every block counts equally regardless of
-///   height): 0 exactly at the top, but mid-document values weigh
-///   blocks, not pixels. At the document bottom the value SNAPS to
-///   exactly 1.0: whenever the LAST item's trailing edge is on screen
-///   (`itemTrailingEdge <= 1`) the document end is fully visible —
-///   without the snap the block-weighted value only approaches
-///   `(n-1+ε)/n` when the tail fits inside the viewport, and the
-///   hairline/percent would never report the exact 1.0/100% the
-///   webview engine reports at its scroll end. The snap requires the
-///   document to be SCROLLABLE: when both ends are on screen at once
-///   (item 0's leading edge at/below the viewport top AND the last
-///   item's trailing edge at/above its bottom) the list never moves and
-///   the webview reports 0 there — scrollY never leaves 0 — so a
-///   fits-in-the-viewport document keeps its block-weighted value (0 at
+/// - **Progress** — PIXEL-weighted (issue #5), not block-weighted: each
+///   item is weighed by its own on-screen extent (`itemTrailingEdge -
+///   itemLeadingEdge`, a fraction of the VIEWPORT height — the only
+///   per-item size `ScrollablePositionedList` ever reports, since it's
+///   virtualized and never measures an item outside the small window it
+///   keeps built) instead of counting every item as one equal unit
+///   (`(topmostIndex + consumedFraction) / itemCount`, the OLD formula —
+///   accurate only when every block happens to be the same height, which
+///   a real document's mix of headings/paragraphs/tables/code fences
+///   never is). [_pixelWeightedProgress] sums the REAL extent of every
+///   currently-measured item strictly above the topmost one, plus the
+///   topmost's own real extent times how much of it has scrolled past,
+///   as the numerator; the same per-item extents (falling back to their
+///   AVERAGE for the many items outside the measured window — the best
+///   available estimate without measuring the whole document, which
+///   would defeat virtualization) summed over every item is the
+///   denominator. Still an ESTIMATE for anything outside the measured
+///   window, but a strictly better one than uniform block-counting
+///   whenever the visible blocks vary a lot in height (a giant table
+///   next to one-line paragraphs, say). 0 exactly at the top (the
+///   topmost item's own consumed fraction is 0 there). At the document
+///   bottom the value SNAPS to exactly 1.0: whenever the LAST item's
+///   trailing edge is on screen (`itemTrailingEdge <= 1`) the document
+///   end is fully visible — without the snap the pixel-weighted value
+///   only approaches (never reaches) 1.0 when the tail fits inside the
+///   viewport, and the hairline/percent would never report the exact
+///   1.0/100% the webview engine reports at its scroll end. The snap
+///   requires the document to be SCROLLABLE: when both ends are on
+///   screen at once (item 0's leading edge at/below the viewport top AND
+///   the last item's trailing edge at/above its bottom) the list never
+///   moves and the webview reports 0 there — scrollY never leaves 0 — so
+///   a fits-in-the-viewport document keeps its computed value (0 at
 ///   rest) instead of opening at 100%.
 /// - **Persistence** — throttled to at most one write per [throttle]
 ///   (default 500ms), trailing-edge with the LATEST value; [dispose]
@@ -1810,13 +1825,11 @@ class NativeReaderScroll {
     }
     if (topmost == null) return;
 
-    final extent = topmost.itemTrailingEdge - topmost.itemLeadingEdge;
-    final double consumed = extent <= 0
-        ? 0
-        : ((-topmost.itemLeadingEdge) / extent).clamp(0.0, 1.0).toDouble();
-    var progress = ((topmost.index + consumed) / itemCount)
-        .clamp(0.0, 1.0)
-        .toDouble();
+    var progress = _pixelWeightedProgress(
+      positions: positions,
+      topmost: topmost,
+      itemCount: itemCount,
+    );
     // Bottom snap — see the class doc's Progress bullet: the last
     // item's trailing edge at/above the viewport bottom means the
     // document end is fully visible, which is exactly the webview's
@@ -1844,6 +1857,66 @@ class NativeReaderScroll {
 
     _docState.applyScrollSpy(ScrollSpyPayload(progress: progress, line: line));
     _schedulePersist(progress, line);
+  }
+
+  /// The pixel-weighted progress computation the class doc's Progress
+  /// bullet describes (issue #5). [positions] is EVERY item
+  /// `ScrollablePositionedList` currently reports a position for (not
+  /// just [topmost]) — typically a handful of items in and immediately
+  /// around the viewport — so their REAL extents feed the estimate
+  /// wherever available; [_extentEstimator] fills in every other item
+  /// (outside that small measured window) with the AVERAGE of the
+  /// extents actually observed.
+  static double _pixelWeightedProgress({
+    required Iterable<ItemPosition> positions,
+    required ItemPosition topmost,
+    required int itemCount,
+  }) {
+    final extentOf = _extentEstimator(positions);
+
+    var consumed = 0.0;
+    for (var i = 0; i < topmost.index; i++) {
+      consumed += extentOf(i);
+    }
+    final topmostExtent = extentOf(topmost.index);
+    final topmostConsumedFraction = topmostExtent <= 0
+        ? 0.0
+        : ((-topmost.itemLeadingEdge) / topmostExtent).clamp(0.0, 1.0);
+    consumed += topmostExtent * topmostConsumedFraction;
+
+    var total = 0.0;
+    for (var i = 0; i < itemCount; i++) {
+      total += extentOf(i);
+    }
+
+    return total <= 0 ? 0.0 : (consumed / total).clamp(0.0, 1.0).toDouble();
+  }
+
+  /// Builds the per-item extent function [_pixelWeightedProgress] weighs
+  /// every item by: a REAL extent (`itemTrailingEdge - itemLeadingEdge`)
+  /// for any index [positions] actually reports (ignoring a non-positive
+  /// one — a zero-extent report, e.g. a not-yet-laid-out item, carries
+  /// no real size information), and the AVERAGE of every real extent
+  /// [positions] DOES carry for every other index. A completely empty or
+  /// all-zero [positions] (degenerate: should not happen in practice —
+  /// [_handlePositions] already returns early on empty positions) falls
+  /// back to a uniform 1.0 per item, which reduces the whole computation
+  /// to the OLD block-counting formula rather than dividing by zero.
+  static double Function(int index) _extentEstimator(
+    Iterable<ItemPosition> positions,
+  ) {
+    final extents = <int, double>{
+      for (final p in positions)
+        p.index: p.itemTrailingEdge - p.itemLeadingEdge,
+    };
+    final known = extents.values.where((e) => e > 0);
+    final average = known.isEmpty
+        ? 1.0
+        : known.reduce((a, b) => a + b) / known.length;
+    return (index) {
+      final extent = extents[index];
+      return (extent != null && extent > 0) ? extent : average;
+    };
   }
 
   void _schedulePersist(double progress, int line) {

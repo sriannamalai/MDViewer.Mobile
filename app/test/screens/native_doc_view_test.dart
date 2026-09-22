@@ -605,20 +605,84 @@ void main() {
     expect(docState.progress, 0);
 
     // Mid-document: item 3 fully scrolled past (trailing edge <= 0) is
-    // EXCLUDED; item 4, a quarter scrolled past, is the topmost.
+    // EXCLUDED; item 4, a quarter scrolled past, is the topmost. Pixel-
+    // weighted (issue #5): items 0-2 and 6-9 have no measured extent this
+    // frame, so they fall back to the AVERAGE of the three items that DO
+    // (index 3: extent 0.4, index 4: extent 1.0, index 5: extent 0.35 →
+    // avg 7/12); index 4 (the topmost) contributes its own REAL extent
+    // times how much of it has scrolled past (0.25/1.0).
     listener.drive(const [
       ItemPosition(index: 3, itemLeadingEdge: -0.4, itemTrailingEdge: 0.0),
       ItemPosition(index: 4, itemLeadingEdge: -0.25, itemTrailingEdge: 0.75),
       ItemPosition(index: 5, itemLeadingEdge: 0.75, itemTrailingEdge: 1.1),
     ]);
     expect(docState.activeLine, fakeLongTreeStartLine(4));
-    // (index 4 + 0.25 of it consumed) / 10 items.
-    expect(docState.progress, closeTo(0.425, 1e-9));
+    const avgExtent = (0.4 + 1.0 + 0.35) / 3;
+    // consumed: 3 unmeasured items (0-2) at the average, plus item 3's
+    // real extent, plus 25% of item 4's (the topmost) real extent.
+    final consumed = 3 * avgExtent + 0.4 + 1.0 * 0.25;
+    // total: every item 0-9, each at its real extent where measured (3,
+    // 4, 5) or the average otherwise (0-2, 6-9).
+    final total = 7 * avgExtent + 0.4 + 1.0 + 0.35;
+    final expectedProgress = consumed / total;
+    expect(docState.progress, closeTo(expectedProgress, 1e-9));
 
     // An empty positions frame mid-flight keeps the last state.
     listener.drive(const []);
     expect(docState.activeLine, fakeLongTreeStartLine(4));
-    expect(docState.progress, closeTo(0.425, 1e-9));
+    expect(docState.progress, closeTo(expectedProgress, 1e-9));
+
+    scroll.dispose();
+  });
+
+  testWidgets('pixel-weighting reports a MEASURABLY different (and more '
+      'accurate) value than pure block-counting when an early block is '
+      'much taller than the rest (issue #5)', (tester) async {
+    final tree = fakeLongTree(paragraphs: 9); // itemCount 10
+    final docState = ReaderDocState(model: DocModel.empty);
+    final listener = _DrivenPositionsListener();
+    final scroll = NativeReaderScroll(
+      tree: tree,
+      docState: docState,
+      progressKey: 'reader.scroll.sample:Long.md',
+      lineKey: 'reader.line.sample:Long.md',
+      positionsListener: listener,
+      persist: (_, _) async {},
+    );
+
+    // Item 0 is a giant block (extent 10.0 — 10x the viewport height,
+    // e.g. a huge table) that's now 95% scrolled past; item 1, a
+    // normal-sized block, has just come into view. The OLD block-
+    // counting formula treats item 0 as worth exactly the same "1 unit"
+    // as every other block regardless of its real height, so scrolling
+    // through 95% of a 10x-viewport-tall block barely moves the needle:
+    // (0 + 0.95) / 10 = 0.095. Pixel-weighting recognizes that block
+    // dominates the document's real scrollable height instead.
+    listener.drive(const [
+      ItemPosition(index: 0, itemLeadingEdge: -9.5, itemTrailingEdge: 0.5),
+      ItemPosition(index: 1, itemLeadingEdge: 0.5, itemTrailingEdge: 1.0),
+    ]);
+    expect(docState.activeLine, fakeLongTreeStartLine(0));
+
+    const oldBlockCountingProgress = 0.95 / 10; // what the OLD formula gave
+    const avgExtent = (10.0 + 0.5) / 2; // items 0 and 1's real extents
+    // consumed: item 0 (the topmost) is 95% scrolled past, at its own
+    // REAL extent — no items precede it, so nothing else to add.
+    final consumed = 10.0 * 0.95;
+    // total: items 0 and 1 at their real extents; the other 8
+    // (unmeasured) items fall back to the average of those two.
+    final total = 10.0 + 0.5 + 8 * avgExtent;
+    final expectedProgress = consumed / total;
+
+    expect(docState.progress, closeTo(expectedProgress, 1e-9));
+    expect(
+      docState.progress,
+      greaterThan(oldBlockCountingProgress * 1.5),
+      reason:
+          'pixel-weighting must recognize that scrolling through 95% of '
+          'a 10x-viewport-tall block is real progress, not the same '
+          '~9.5% the old one-unit-per-block formula reported',
+    );
 
     scroll.dispose();
   });
@@ -672,7 +736,7 @@ void main() {
   });
 
   testWidgets('progress snaps to exactly 1.0 whenever the last item is '
-      'fully visible — the block-weighted value alone would cap below 1.0 '
+      'fully visible — the pixel-weighted value alone would cap below 1.0 '
       'when the tail fits in the viewport', (tester) async {
     final tree = fakeLongTree(paragraphs: 9); // itemCount 10
     final docState = ReaderDocState(model: DocModel.empty);
@@ -687,9 +751,10 @@ void main() {
     );
 
     // The last two items on screen, the final one ending above the
-    // viewport bottom: block-weighted progress would be
-    // (8 + 0.2/0.6)/10 ≈ 0.83 — but the document end is fully visible,
-    // which IS the webview's progress==1.0 scroll-end.
+    // viewport bottom: without the snap below, progress would still be
+    // well under 1.0 here (the tail fits in the viewport with room to
+    // spare) — but the document end is fully visible, which IS the
+    // webview's progress==1.0 scroll-end.
     listener.drive(const [
       ItemPosition(index: 8, itemLeadingEdge: -0.2, itemTrailingEdge: 0.4),
       ItemPosition(index: 9, itemLeadingEdge: 0.4, itemTrailingEdge: 0.95),
@@ -726,10 +791,10 @@ void main() {
     // the consumed-fraction division is guarded (no throw). The single
     // item is BOTH the first and the last, with both edges on screen —
     // the document does not scroll, and the bottom snap is gated on
-    // that, so progress stays the block-weighted 0. Webview parity: an
-    // unscrollable document reports 0 there too (scrollY never leaves
-    // 0), and 100%-at-first-paint would also write a bogus 1.0 to the
-    // shared `reader.scroll.…` restore key.
+    // that, so progress stays 0. Webview parity: an unscrollable
+    // document reports 0 there too (scrollY never leaves 0), and
+    // 100%-at-first-paint would also write a bogus 1.0 to the shared
+    // `reader.scroll.…` restore key.
     final one = fakeLongTree(paragraphs: 0);
     final oneDocState = ReaderDocState(model: DocModel.empty);
     final oneListener = _DrivenPositionsListener();
@@ -751,10 +816,8 @@ void main() {
   });
 
   testWidgets('a multi-item document that fits ENTIRELY in the viewport '
-      'reports its block-weighted value (0 at rest), not the bottom '
-      'snap — the webview reports 0 on an unscrollable document', (
-    tester,
-  ) async {
+      'reports 0 (at rest), not the bottom snap — the webview reports 0 '
+      'on an unscrollable document', (tester) async {
     final tree = fakeLongTree(paragraphs: 2); // itemCount 3
     final docState = ReaderDocState(model: DocModel.empty);
     final listener = _DrivenPositionsListener();
