@@ -55,6 +55,10 @@ dependencies:
   # The webview engine never needed it (a WebView renders <img src=.svg>
   # natively).
   flutter_svg: 2.3.0
+  # Used by the Reader's Share sheet PDF export (issue #11):
+  # Printing.convertHtml() turns the Webview engine's rendered HTML
+  # (same source the HTML export already uses) into real PDF bytes.
+  printing: ^5.15.1
 
 dev_dependencies:
   flutter_test:

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:mdviewer/mdviewer.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart' show Printing;
 import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:share_plus/share_plus.dart';
@@ -121,6 +122,11 @@ class ReaderScreen extends StatefulWidget {
 }
 
 enum _LoadStatus { loading, ready, error }
+
+/// The Share sheet's format choice (issue #11): [html] is the original
+/// self-contained export; [pdf] converts the SAME rendered HTML via the
+/// `printing` package's `Printing.convertHtml`.
+enum _ShareFormat { html, pdf }
 
 class _ReaderScreenState extends State<ReaderScreen> {
   static const double _headerButtonSize = 38;
@@ -1003,9 +1009,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
+  /// The header's Share button now offers a choice (issue #11): the
+  /// original self-contained-HTML export, or a PDF built from that SAME
+  /// HTML via [_showShareFormatSheet]. Both branches share the identical
+  /// render (webview-engine HTML, images embedded) up front — the format
+  /// choice only changes what happens to that one rendered string.
   Future<void> _share() async {
     final doc = _parsedDoc;
     if (doc == null || !mounted) return;
+    final format = await _showShareFormatSheet();
+    if (format == null || !mounted) return;
     try {
       // A native-engine document never prefetched its images (the
       // adapter resolves them lazily); the share export's synchronous
@@ -1025,20 +1038,125 @@ class _ReaderScreenState extends State<ReaderScreen> {
         resolver: _images.toResolver(),
       );
       final dir = await getTemporaryDirectory();
-      final filename = ShareFilename.forEntryName(widget.entry.name);
-      final file = File('${dir.path}/$filename');
-      await file.writeAsString(html);
-
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path, mimeType: 'text/html', name: filename)],
-          subject: widget.entry.name,
-        ),
-      );
+      switch (format) {
+        case _ShareFormat.html:
+          final filename = ShareFilename.forEntryName(widget.entry.name);
+          final file = File('${dir.path}/$filename');
+          await file.writeAsString(html);
+          await SharePlus.instance.share(
+            ShareParams(
+              files: [
+                XFile(file.path, mimeType: 'text/html', name: filename),
+              ],
+              subject: widget.entry.name,
+            ),
+          );
+        case _ShareFormat.pdf:
+          // Issue #11: PDF export starts from the SAME Webview-rendered
+          // HTML the HTML export uses (per the issue's own suggestion),
+          // converted to real PDF bytes by the `printing` package's HTML
+          // engine — no separate native-tree-to-PDF pipeline to maintain.
+          // `convertHtml` is deprecated upstream (nudging callers toward
+          // building a `pw.Document` from scratch instead of converting
+          // HTML), but it's still implemented and is exactly the API the
+          // issue itself asks for; no replacement exists for "convert
+          // this already-rendered HTML string" specifically.
+          // ignore: deprecated_member_use
+          final bytes = await Printing.convertHtml(html: html);
+          final filename = ShareFilename.forEntryName(
+            widget.entry.name,
+            extension: 'pdf',
+          );
+          final file = File('${dir.path}/$filename');
+          await file.writeAsBytes(bytes);
+          await SharePlus.instance.share(
+            ShareParams(
+              files: [
+                XFile(file.path, mimeType: 'application/pdf', name: filename),
+              ],
+              subject: widget.entry.name,
+            ),
+          );
+      }
     } catch (_) {
       // Best-effort share; no UI feedback for a failed share sheet per the
       // brief's scope (same "no toasts" posture other screens follow).
     }
+  }
+
+  /// The Share button's format choice (issue #11), styled like the
+  /// mailto:/tel: confirmation sheet ([_showConfirmExternalSheet]). Null
+  /// means dismissed (veil tap, drag, back gesture) — [_share] treats
+  /// that as "do nothing", the same posture a cancelled OS share sheet
+  /// already has.
+  Future<_ShareFormat?> _showShareFormatSheet() {
+    final tokens = AppTokens.of(context);
+    return showModalBottomSheet<_ShareFormat>(
+      context: context,
+      backgroundColor: tokens.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppGeometry.sheetRadius),
+        ),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration: BoxDecoration(
+                    color: tokens.line,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(
+                'Share as…',
+                style: TextStyle(
+                  fontFamily: AppFonts.ibmPlexSans,
+                  fontSize: AppTypeScale.h3Size,
+                  fontWeight: AppTypeScale.h3Weight,
+                  color: tokens.text,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: _SheetActionButton(
+                      label: 'HTML',
+                      color: tokens.panel2,
+                      textColor: tokens.text,
+                      onTap: () => Navigator.of(
+                        sheetContext,
+                      ).pop(_ShareFormat.html),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _SheetActionButton(
+                      label: 'PDF',
+                      color: tokens.accentSoft,
+                      textColor: tokens.accent,
+                      onTap: () =>
+                          Navigator.of(sheetContext).pop(_ShareFormat.pdf),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// The Aa bottom sheet: the text-size stepper plus — once the

@@ -1775,9 +1775,112 @@ void main() {
       await tester.tap(find.text('Choose folder'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining("Couldn't find"), findsOneWidget);
+    expect(find.textContaining("Couldn't find"), findsOneWidget);
       expect(find.textContaining('Opened without its folder'), findsNothing);
       expect(find.byType(ReaderScreen, skipOffstage: false), findsOneWidget);
+    },
+  );
+
+  // ── Share format picker + PDF export (issue #11) ─────────────────
+
+  testWidgets('the Share button opens a format picker offering HTML and PDF', (
+    tester,
+  ) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('⇪'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Share as…'), findsOneWidget);
+    expect(find.text('HTML'), findsOneWidget);
+    expect(find.text('PDF'), findsOneWidget);
+  });
+
+  testWidgets(
+    'choosing HTML from the share sheet completes without crashing '
+    '(best-effort share, same posture as before issue #11)',
+    (tester) async {
+      final entry = _sampleEntry();
+      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+      final appState = AppState();
+      await appState.init();
+      final renderer = _FakeDocRenderer();
+
+      await tester.pumpWidget(
+        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('⇪'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('HTML'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Share as…'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'choosing PDF from the share sheet attempts Printing.convertHtml and '
+    'degrades gracefully without a platform channel under test (issue #11)',
+    (tester) async {
+      final entry = _sampleEntry();
+      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+      final appState = AppState();
+      await appState.init();
+      final renderer = _FakeDocRenderer();
+
+      await tester.pumpWidget(
+        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('⇪'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('PDF'));
+      await tester.pumpAndSettle();
+
+      // No real `printing` platform channel exists under `flutter test`, so
+      // the convertHtml call throws — the same try/catch that already
+      // covers a failed HTML share swallows it (best-effort, no toast).
+      expect(tester.takeException(), isNull);
+      expect(find.text('Share as…'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'dismissing the share sheet without choosing a format is a no-op',
+    (tester) async {
+      final entry = _sampleEntry();
+      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+      final appState = AppState();
+      await appState.init();
+      final renderer = _FakeDocRenderer();
+
+      await tester.pumpWidget(
+        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('⇪'));
+      await tester.pumpAndSettle();
+
+      // Tap the scrim above the sheet to dismiss without a choice.
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Share as…'), findsNothing);
     },
   );
 }

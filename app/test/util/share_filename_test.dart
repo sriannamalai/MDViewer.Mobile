@@ -50,5 +50,16 @@ void main() {
     test('a name with no markdown extension keeps its base name', () {
       expect(ShareFilename.forEntryName('README'), 'README.html');
     });
+
+    test('a custom extension (issue #11\'s PDF export) replaces .html', () {
+      expect(
+        ShareFilename.forEntryName('Welcome.md', extension: 'pdf'),
+        'Welcome.pdf',
+      );
+      expect(
+        ShareFilename.forEntryName('Getting Started.md', extension: 'pdf'),
+        'Getting Started.pdf',
+      );
+    });
   });
 }

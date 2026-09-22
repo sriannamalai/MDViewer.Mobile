@@ -18,18 +18,19 @@ class ShareFilename {
 
   /// Turns a `VaultEntry.name` (e.g. `"Getting Started.md"`) into the share
   /// file's name (`"Getting Started.html"`): the `.md`/`.markdown`
-  /// extension replaced with `.html`, unsafe characters replaced with `_`,
-  /// leading dots stripped (a name that started with a dot would otherwise
+  /// extension replaced with [extension] (default `html`; issue #11's PDF
+  /// export passes `pdf`), unsafe characters replaced with `_`, leading
+  /// dots stripped (a name that started with a dot would otherwise
   /// produce a hidden file on most platforms — surprising for a share-sheet
   /// export), and a `"document"` fallback for a name that sanitizes to
   /// nothing (e.g. an original name that was ONLY unsafe characters).
-  static String forEntryName(String name) {
+  static String forEntryName(String name, {String extension = 'html'}) {
     final withoutExtension = name.replaceFirst(_mdExtension, '');
     var sanitized = withoutExtension.replaceAll(_unsafe, '_').trim();
     while (sanitized.startsWith('.')) {
       sanitized = sanitized.substring(1);
     }
     if (sanitized.isEmpty) sanitized = 'document';
-    return '$sanitized.html';
+    return '$sanitized.$extension';
   }
 }
