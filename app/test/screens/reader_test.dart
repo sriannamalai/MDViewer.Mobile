@@ -1271,6 +1271,64 @@ void main() {
     expect(find.byType(ReaderScreen, skipOffstage: false), findsOneWidget);
   });
 
+  testWidgets('a native #fragment that matches no heading shows a snackbar '
+      'hint instead of a silent no-op (issue #4)', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final onLinkTap = tester
+        .widget<NativeDocView>(find.byType(NativeDocView))
+        .onLinkTap!;
+    onLinkTap('#no-such-heading', false, null);
+    await tester.pump(); // flush the unawaited _jumpToFragment microtask
+    await tester.pump(); // SnackBar's entrance animation frame
+
+    expect(
+      find.text("This link points to a location this app can't jump to "
+          'directly'),
+      findsOneWidget,
+    );
+
+    await tester.pumpAndSettle(); // let the snackbar finish its lifecycle
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a native #fragment that DOES match a heading scrolls without '
+      'showing the unresolved hint (issue #4)', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final onLinkTap = tester
+        .widget<NativeDocView>(find.byType(NativeDocView))
+        .onLinkTap!;
+    // fakeTree()'s H1 carries anchorId 'native-heading'.
+    onLinkTap('#native-heading', false, null);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text("This link points to a location this app can't jump to "
+          'directly'),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a native mailto: link tap shows a confirmation sheet before '
       'launching (issue #15) — Cancel dismisses without launching', (
     tester,

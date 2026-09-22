@@ -855,12 +855,33 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   /// The native half of `#fragment`-only link navigation: scrolls to the
-  /// heading in THIS document whose `anchorId` matches [fragment]. A
-  /// no-op if no such heading exists or the native scroll plumbing isn't
-  /// active (e.g. the document is currently on the webview engine, which
-  /// handles its own in-page anchors and never routes through here).
+  /// heading in THIS document whose `anchorId` matches [fragment]. When
+  /// [fragment] isn't a heading anchor — issue #4's documented native-only
+  /// gap: a fragment pointing at a non-heading id (e.g. a custom raw-HTML
+  /// `id`) has no addressable native scroll target — shows a brief hint
+  /// instead of a silent no-op, so the user knows the tap did something,
+  /// just not what they expected. (The webview engine never routes
+  /// through here at all — it handles its own in-page anchors via the
+  /// browser's own DOM lookup, which finds a non-heading id fine.)
   Future<void> _jumpToFragment(String fragment) async {
-    await _nativeScroll?.scrollToAnchor(fragment);
+    final scrolled = await _nativeScroll?.scrollToAnchor(fragment) ?? false;
+    if (!scrolled) _showFragmentUnresolvedHint();
+  }
+
+  /// Issue #4's fallback hint, shown via the ambient [ScaffoldMessenger]
+  /// (provided by `MaterialApp`, so this works regardless of where this
+  /// Reader sits in the navigation stack) rather than a bespoke overlay —
+  /// a snackbar is the app's only existing "transient feedback" pattern
+  /// and needs no new chrome.
+  void _showFragmentUnresolvedHint() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          "This link points to a location this app can't jump to directly",
+        ),
+      ),
+    );
   }
 
   /// The native engine's footnote-reference-marker tap
@@ -1735,16 +1756,20 @@ class NativeReaderScroll {
   }
 
   /// Jumps to the heading whose `anchorId` matches [anchorId], via a
-  /// short animated scroll. No-op when no such heading exists or the
-  /// controller isn't attached yet.
-  Future<void> scrollToAnchor(String anchorId) async {
+  /// short animated scroll. Returns whether the jump actually fired —
+  /// false when no such heading exists (issue #4: the Reader shows a
+  /// "can't jump directly" hint in that case, since a fragment pointing
+  /// at a non-heading id, e.g. a custom raw-HTML `id`, is otherwise a
+  /// silent no-op) or the controller isn't attached yet.
+  Future<bool> scrollToAnchor(String anchorId) async {
     final index = indexForAnchor(anchorId);
-    if (index == null || !itemScrollController.isAttached) return;
+    if (index == null || !itemScrollController.isAttached) return false;
     await itemScrollController.scrollTo(
       index: index,
       duration: const Duration(milliseconds: 280),
       curve: Curves.ease,
     );
+    return true;
   }
 
   /// The trailing footnotes section's item index, or null when the
