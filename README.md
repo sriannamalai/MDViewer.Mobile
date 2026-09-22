@@ -72,7 +72,7 @@ the matching `libmdviewer-0.11.0-*.zip` release artifacts directly.
    flutter test
    ```
 
-## Known limitations (v2)
+## Known limitations (v2.3, per README — organized by engine)
 
 The Reader has two rendering engines. **Native** (the plugin's typed
 render tree, via `MdvDocumentAdapter`) is the default for every document
@@ -92,56 +92,51 @@ created lazily only for a document that actually contains a diagram
 (`treeContainsMermaid`). Each diagram's Mermaid source renders to an SVG
 string via `mdvRenderMermaid`, displayed with `flutter_svg`; any failure
 (no reachable `libmdviewer`, a malformed diagram, a bridge timeout)
-falls back to the library's bordered placeholder, never a crash. One
-follow-on gap: a diagram's rendered colors are fixed to the theme at
-first render — a light/dark flip *after* a diagram has already rendered
-doesn't re-render it until the document is reopened (every other native
-block restyles in place on a theme flip; a diagram is the one exception,
-since re-running the offscreen bridge in place adds real complexity for
-a rare mid-read theme change).
+falls back to the library's bordered placeholder, never a crash. A
+diagram also re-renders on a light/dark theme flip AFTER it has already
+rendered, comparing the ambient brightness against the theme its cached
+request was issued for (`MermaidDiagramView`) — every native block
+restyles in place on a theme flip, diagrams included.
 
 Native engine only:
 
 - **Pure `#fragment` links jump to a matching HEADING only.** Native
   navigation resolves a fragment against `MdvHeading.anchorId` (the
   same slugs headings carry); a fragment that isn't a heading anchor
-  (e.g. a custom raw-HTML `id`) is still inert. The Webview engine
+  (e.g. a custom raw-HTML `id`) shows a brief snackbar hint ("This link
+  points to a location this app can't jump to directly") instead of a
+  silent no-op, but still can't jump there directly — that needs a
+  plugin-side scroll-target primitive (issue #4). The Webview engine
   handles any in-page anchor via the browser's own DOM lookup.
 - **Footnote-reference taps jump to the footnotes section, not the
   exact definition.** `MdvDocumentAdapter` renders every definition
   inside ONE trailing list item (no per-definition scroll target), so a
   tap on any in-text footnote marker scrolls there — close, but not a
-  precise landing when a document has several footnotes. The Webview
-  engine still jumps to the exact definition in-page.
-- **Progress / hairline % is a block-weighted approximation**, not a
-  pixel-accurate scroll fraction — every block counts equally regardless
-  of its rendered height. It snaps to exactly 100% at the bottom of a
-  document that's taller than the viewport (matching what the Webview
-  engine reports at its scroll end); a document that fits entirely
-  inside the viewport never scrolls, so it reports 0%, same as Webview.
-- **Internal relative `.md` links push a new Reader screen** (back
-  returns to the linking document), while the Webview engine still
-  *replaces* the current Reader with the target (iOS — see the Webview
-  note below for Android). This is a real cross-engine back-stack
-  difference, carried forward pending harmonization — switching engines
-  mid-document doesn't change how the *next* link tap navigates.
+  precise landing when a document has several footnotes (issue #3,
+  needs a plugin-side change). The Webview engine still jumps to the
+  exact definition in-page.
 
 Both engines:
 
 - **"Open with MDViewer" opens the file alone.** A document handed over
   by the OS (share sheet, Files app, another app) renders fully, but its
-  *relative* images and links have no folder to resolve against, so they
-  show as unresolved placeholders. Point the app at the containing folder
-  ("Choose folder") to get relative content.
-- **One folder vault at a time.** Picking a new folder replaces the
-  previous grant; there is no multi-vault list. The bundled Samples vault
-  is always present alongside it.
-- **Wiki-links (`[[Like This]]`) do not navigate** — they render styled
-  but inert. Use the Library tree or Search to move between documents.
-- **`mailto:` / `tel:` links are declined** — the Reader opens only
-  `http(s)` links (in the system browser) and vault-relative `.md` links
-  (in the Reader).
-- **Share exports self-contained HTML only** — no PDF export yet.
+  *relative* images and links have no folder to resolve against. The
+  Reader now detects this and shows a dismissible banner prompting
+  "Choose folder" (re-opening the same document from the newly-picked
+  vault when its filename matches exactly one file there) instead of
+  silently showing broken placeholders — iOS's sandboxing still rules
+  out resolving them without that folder pick at all.
+- **Multiple folder vaults are supported** (`VaultState.vaultGrants`),
+  switchable from the Library's vault chips; the bundled Samples vault
+  is always present alongside them. One known simplification: a
+  folder-vault document only resolves relative links/images while ITS
+  vault is the active one (`VaultSource`/`VaultEntry` don't carry a
+  per-instance vault id yet).
+- **`mailto:` / `tel:` links show a brief "Open in Mail/Phone app?"
+  confirmation** before handing off to the OS, on both engines.
+- **Share offers HTML or PDF export** — PDF converts the same
+  Webview-rendered HTML the HTML export produces, via the `printing`
+  package's `Printing.convertHtml`.
 - Read-only by design: no editing, no file management, no sync.
 
 Webview engine only:
@@ -150,11 +145,9 @@ Webview engine only:
   the WebView collapses a tapped relative link's URL before the app
   sees it (`loadHtmlString` has no base URL), so the tap is a
   deliberate no-op there — switch the document to Native to navigate
-  on Android.
-- **The Webview-rendered document uses the system font stack**, not the
-  design's Source Serif 4 / IBM Plex Sans / JetBrains Mono (ledgered
-  library gap) — the app chrome around it bundles those fonts regardless
-  of which engine is rendering the document body.
+  on Android. A `baseUrl`-based fix is identified (issue #12) but needs
+  on-device verification it doesn't also change what iOS's WKWebView
+  reports for its own page load before it's safe to ship.
 
 ### Regenerating launcher icons
 
