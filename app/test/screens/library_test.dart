@@ -405,38 +405,35 @@ void main() {
       expect(find.text('W.md'), findsNothing);
     });
 
-    testWidgets(
-      'tapping a chip\'s ✕ removes that vault without disturbing the '
-      'active one',
-      (tester) async {
-        SharedPreferences.setMockInitialValues({
-          'vault.grants': jsonEncode([
-            {'id': 'a', 'displayName': 'Notes'},
-            {'id': 'b', 'displayName': 'Work'},
-          ]),
-          'vault.activeGrantId': 'b',
-        });
-        final folder = FakeVaultProvider(files: {'W.md': _bytes('w')});
-        final vault = VaultState(
-          sampleProvider: FakeVaultProvider(),
-          folderProvider: folder,
-        );
-        await vault.init();
+    testWidgets('tapping a chip\'s ✕ removes that vault without disturbing the '
+        'active one', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'vault.grants': jsonEncode([
+          {'id': 'a', 'displayName': 'Notes'},
+          {'id': 'b', 'displayName': 'Work'},
+        ]),
+        'vault.activeGrantId': 'b',
+      });
+      final folder = FakeVaultProvider(files: {'W.md': _bytes('w')});
+      final vault = VaultState(
+        sampleProvider: FakeVaultProvider(),
+        folderProvider: folder,
+      );
+      await vault.init();
 
-        await tester.pumpWidget(_wrap(vault));
-        await tester.pump();
+      await tester.pumpWidget(_wrap(vault));
+      await tester.pump();
 
-        // Two ✕ glyphs exist (one per chip) — tap the first, which belongs
-        // to "Notes" (chips render in vaultGrants order).
-        await tester.tap(find.text('✕').first);
-        await tester.pumpAndSettle();
+      // Two ✕ glyphs exist (one per chip) — tap the first, which belongs
+      // to "Notes" (chips render in vaultGrants order).
+      await tester.tap(find.text('✕').first);
+      await tester.pumpAndSettle();
 
-        expect(vault.vaultGrants.map((g) => g.id), ['b']);
-        expect(vault.activeGrantId, 'b');
-        expect(find.text('Notes'), findsNothing);
-        expect(find.text('Work'), findsOneWidget);
-      },
-    );
+      expect(vault.vaultGrants.map((g) => g.id), ['b']);
+      expect(vault.activeGrantId, 'b');
+      expect(find.text('Notes'), findsNothing);
+      expect(find.text('Work'), findsOneWidget);
+    });
 
     testWidgets('the "+ Add" chip calls pickFolder, ADDING a new vault', (
       tester,

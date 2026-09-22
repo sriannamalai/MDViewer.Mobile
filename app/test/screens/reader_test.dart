@@ -1304,8 +1304,10 @@ void main() {
     await tester.pump(); // SnackBar's entrance animation frame
 
     expect(
-      find.text("This link points to a location this app can't jump to "
-          'directly'),
+      find.text(
+        "This link points to a location this app can't jump to "
+        'directly',
+      ),
       findsOneWidget,
     );
 
@@ -1334,8 +1336,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text("This link points to a location this app can't jump to "
-          'directly'),
+      find.text(
+        "This link points to a location this app can't jump to "
+        'directly',
+      ),
       findsNothing,
     );
     expect(tester.takeException(), isNull);
@@ -1654,30 +1658,26 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(
-      find.textContaining("Opened without its folder"),
-      findsOneWidget,
-    );
+    expect(find.textContaining("Opened without its folder"), findsOneWidget);
     expect(find.text('Choose folder'), findsOneWidget);
   });
 
-  testWidgets(
-    'a sample document never shows the open-with folder banner',
-    (tester) async {
-      final entry = _sampleEntry();
-      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
-      final appState = AppState();
-      await appState.init();
-      final renderer = _FakeDocRenderer();
+  testWidgets('a sample document never shows the open-with folder banner', (
+    tester,
+  ) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
 
-      await tester.pumpWidget(
-        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
-      );
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.textContaining('Opened without its folder'), findsNothing);
-    },
-  );
+    expect(find.textContaining('Opened without its folder'), findsNothing);
+  });
 
   testWidgets('dismissing the open-with banner hides it', (tester) async {
     final vault = VaultState(
@@ -1775,7 +1775,7 @@ void main() {
       await tester.tap(find.text('Choose folder'));
       await tester.pumpAndSettle();
 
-    expect(find.textContaining("Couldn't find"), findsOneWidget);
+      expect(find.textContaining("Couldn't find"), findsOneWidget);
       expect(find.textContaining('Opened without its folder'), findsNothing);
       expect(find.byType(ReaderScreen, skipOffstage: false), findsOneWidget);
     },
@@ -1805,30 +1805,27 @@ void main() {
     expect(find.text('PDF'), findsOneWidget);
   });
 
-  testWidgets(
-    'choosing HTML from the share sheet completes without crashing '
-    '(best-effort share, same posture as before issue #11)',
-    (tester) async {
-      final entry = _sampleEntry();
-      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
-      final appState = AppState();
-      await appState.init();
-      final renderer = _FakeDocRenderer();
+  testWidgets('choosing HTML from the share sheet completes without crashing '
+      '(best-effort share, same posture as before issue #11)', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
 
-      await tester.pumpWidget(
-        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
-      );
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.text('⇪'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('HTML'));
-      await tester.pumpAndSettle();
+    await tester.tap(find.text('⇪'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('HTML'));
+    await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull);
-      expect(find.text('Share as…'), findsNothing);
-    },
-  );
+    expect(tester.takeException(), isNull);
+    expect(find.text('Share as…'), findsNothing);
+  });
 
   testWidgets(
     'choosing PDF from the share sheet attempts Printing.convertHtml and '

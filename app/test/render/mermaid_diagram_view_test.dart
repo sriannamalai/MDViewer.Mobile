@@ -29,15 +29,17 @@ class _RecordingMermaidBridge extends MermaidBridge {
   }
 }
 
-const _node = MdvDiagram(id: 'd1', source: 'graph TD; A-->B;', engine: 'mermaid');
+const _node = MdvDiagram(
+  id: 'd1',
+  source: 'graph TD; A-->B;',
+  engine: 'mermaid',
+);
 
 Widget _host(Brightness brightness, MermaidBridge? bridge) {
   return MaterialApp(
     theme: ThemeData(brightness: Brightness.light),
     darkTheme: ThemeData(brightness: Brightness.dark),
-    themeMode: brightness == Brightness.dark
-        ? ThemeMode.dark
-        : ThemeMode.light,
+    themeMode: brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
     home: Scaffold(
       body: MermaidDiagramView(
         node: _node,
@@ -82,7 +84,8 @@ void main() {
     expect(
       bridge.themes,
       ['default', 'dark'],
-      reason: 'the diagram must re-render with the flipped theme, not keep '
+      reason:
+          'the diagram must re-render with the flipped theme, not keep '
           'its first-render colors until the document reopens',
     );
   });

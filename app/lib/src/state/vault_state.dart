@@ -182,7 +182,9 @@ class VaultState extends ChangeNotifier {
       if (grantsRaw != null) {
         final decoded = jsonDecode(grantsRaw);
         if (decoded is List) {
-          _vaultGrants = [for (final item in decoded) ?VaultGrant.fromJson(item)];
+          _vaultGrants = [
+            for (final item in decoded) ?VaultGrant.fromJson(item),
+          ];
         }
         _activeGrantId = prefs.getString(_activeGrantIdKey);
         return;
@@ -226,10 +228,7 @@ class VaultState extends ChangeNotifier {
     final grant = await _folderProvider.pickFolder();
     if (grant == null) return false;
 
-    _vaultGrants = [
-      ..._vaultGrants.where((g) => g.id != grant.id),
-      grant,
-    ];
+    _vaultGrants = [..._vaultGrants.where((g) => g.id != grant.id), grant];
     _activeGrantId = grant.id;
     await _reloadFolderEntries(grant);
 

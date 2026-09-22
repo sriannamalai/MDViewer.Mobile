@@ -30,7 +30,11 @@ class WebviewFonts {
   const WebviewFonts._();
 
   static const List<_FontFile> _files = [
-    _FontFile(AppFonts.ibmPlexSans, 400, 'assets/fonts/IBMPlexSans-Regular.ttf'),
+    _FontFile(
+      AppFonts.ibmPlexSans,
+      400,
+      'assets/fonts/IBMPlexSans-Regular.ttf',
+    ),
     _FontFile(AppFonts.ibmPlexSans, 500, 'assets/fonts/IBMPlexSans-Medium.ttf'),
     _FontFile(
       AppFonts.ibmPlexSans,

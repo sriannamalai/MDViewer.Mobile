@@ -31,69 +31,60 @@ void main() {
       expect(url, 'Other.md');
     });
 
-    test(
-      'a match in a different directory resolves relative to the linking '
-      "document's directory, ready for VaultPath.resolve",
-      () {
-        // Linking doc in Notes/, match at the vault root: climb out.
-        expect(
-          resolveWikiLinkUrl(
-            fromRelPath: 'Notes/A.md',
-            target: 'Other',
-            mdRelPaths: const ['Notes/A.md', 'Other.md'],
-          ),
-          '../Other.md',
-        );
-        // Linking doc at the root, match in a subdirectory: descend.
-        expect(
-          resolveWikiLinkUrl(
-            fromRelPath: 'Welcome.md',
-            target: 'Sub',
-            mdRelPaths: const ['Welcome.md', 'Notes/Sub.md'],
-          ),
-          'Notes/Sub.md',
-        );
-        // Both in the same directory: no climb needed.
-        expect(
-          resolveWikiLinkUrl(
-            fromRelPath: 'Notes/A.md',
-            target: 'B',
-            mdRelPaths: const ['Notes/A.md', 'Notes/B.md'],
-          ),
-          'B.md',
-        );
-      },
-    );
-
-    test(
-      'zero matches (unresolved) falls back to the wikiSearchUri marker '
-      'carrying the RAW target',
-      () {
-        final url = resolveWikiLinkUrl(
+    test('a match in a different directory resolves relative to the linking '
+        "document's directory, ready for VaultPath.resolve", () {
+      // Linking doc in Notes/, match at the vault root: climb out.
+      expect(
+        resolveWikiLinkUrl(
+          fromRelPath: 'Notes/A.md',
+          target: 'Other',
+          mdRelPaths: const ['Notes/A.md', 'Other.md'],
+        ),
+        '../Other.md',
+      );
+      // Linking doc at the root, match in a subdirectory: descend.
+      expect(
+        resolveWikiLinkUrl(
           fromRelPath: 'Welcome.md',
-          target: 'Nonexistent Page',
-          mdRelPaths: const ['Welcome.md', 'Other.md'],
-        );
-        expect(url, wikiSearchUri('Nonexistent Page').toString());
-        final parsed = Uri.parse(url);
-        expect(parsed.scheme, wikiSearchScheme);
-        expect(parsed.queryParameters['q'], 'Nonexistent Page');
-      },
-    );
+          target: 'Sub',
+          mdRelPaths: const ['Welcome.md', 'Notes/Sub.md'],
+        ),
+        'Notes/Sub.md',
+      );
+      // Both in the same directory: no climb needed.
+      expect(
+        resolveWikiLinkUrl(
+          fromRelPath: 'Notes/A.md',
+          target: 'B',
+          mdRelPaths: const ['Notes/A.md', 'Notes/B.md'],
+        ),
+        'B.md',
+      );
+    });
 
-    test(
-      'more than one same-stem match (ambiguous) ALSO falls back to the '
-      'search marker, not an arbitrary pick',
-      () {
-        final url = resolveWikiLinkUrl(
-          fromRelPath: 'Welcome.md',
-          target: 'Notes',
-          mdRelPaths: const ['A/Notes.md', 'B/Notes.md'],
-        );
-        expect(Uri.parse(url).scheme, wikiSearchScheme);
-        expect(Uri.parse(url).queryParameters['q'], 'Notes');
-      },
-    );
+    test('zero matches (unresolved) falls back to the wikiSearchUri marker '
+        'carrying the RAW target', () {
+      final url = resolveWikiLinkUrl(
+        fromRelPath: 'Welcome.md',
+        target: 'Nonexistent Page',
+        mdRelPaths: const ['Welcome.md', 'Other.md'],
+      );
+      expect(url, wikiSearchUri('Nonexistent Page').toString());
+      final parsed = Uri.parse(url);
+      expect(parsed.scheme, wikiSearchScheme);
+      expect(parsed.queryParameters['q'], 'Nonexistent Page');
+    });
+
+    test('more than one same-stem match (ambiguous) ALSO falls back to the '
+        'search marker, not an arbitrary pick', () {
+      final url = resolveWikiLinkUrl(
+        fromRelPath: 'Welcome.md',
+        target: 'Notes',
+        mdRelPaths: const ['A/Notes.md', 'B/Notes.md'],
+      );
+      expect(Uri.parse(url).scheme, wikiSearchScheme);
+      expect(Uri.parse(url).queryParameters['q'], 'Notes');
+    });
 
     test('an empty candidate list always falls back to search', () {
       final url = resolveWikiLinkUrl(

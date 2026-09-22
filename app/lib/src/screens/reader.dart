@@ -982,9 +982,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (!picked || !mounted) return;
 
     final matches = VaultSearch.flattenMarkdownFiles(vault.entries)
-        .where(
-          (e) => e.name.toLowerCase() == widget.entry.name.toLowerCase(),
-        )
+        .where((e) => e.name.toLowerCase() == widget.entry.name.toLowerCase())
         .toList();
     if (matches.length == 1) {
       await Navigator.of(context).pushReplacement(
@@ -1045,9 +1043,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           await file.writeAsString(html);
           await SharePlus.instance.share(
             ShareParams(
-              files: [
-                XFile(file.path, mimeType: 'text/html', name: filename),
-              ],
+              files: [XFile(file.path, mimeType: 'text/html', name: filename)],
               subject: widget.entry.name,
             ),
           );
@@ -1135,9 +1131,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       label: 'HTML',
                       color: tokens.panel2,
                       textColor: tokens.text,
-                      onTap: () => Navigator.of(
-                        sheetContext,
-                      ).pop(_ShareFormat.html),
+                      onTap: () =>
+                          Navigator.of(sheetContext).pop(_ShareFormat.html),
                     ),
                   ),
                   const SizedBox(width: 12),

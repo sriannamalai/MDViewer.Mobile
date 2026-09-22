@@ -131,10 +131,7 @@ void main() {
         'the query on BOTH platforms', () {
       for (final platform in platforms) {
         expect(
-          decideLinkTap(
-            'mdvwiki://search?q=Page%20Name',
-            platform: platform,
-          ),
+          decideLinkTap('mdvwiki://search?q=Page%20Name', platform: platform),
           const LinkOpenSearch('Page Name'),
         );
       }

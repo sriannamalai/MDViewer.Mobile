@@ -243,11 +243,9 @@ void main() {
       final ok = await state.switchVault('a');
 
       expect(ok, true);
-      expect(
-        folder.restoreCalls,
-        [const VaultGrant(id: 'a', displayName: 'A')],
-        reason: 'switching re-restores the target grant\'s native access',
-      );
+      expect(folder.restoreCalls, [
+        const VaultGrant(id: 'a', displayName: 'A'),
+      ], reason: 'switching re-restores the target grant\'s native access');
       expect(state.activeGrantId, 'a');
       expect(state.vaultName, 'A');
       expect(state.entries.map((e) => e.name), ['A.md']);
@@ -255,98 +253,88 @@ void main() {
       expect(state.vaultGrants.map((g) => g.id), ['a', 'b']);
     });
 
-    test(
-      'switchVault to a grant that fails to restore leaves the PREVIOUS '
-      'vault active and does not drop it from the list',
-      () async {
-        final folder = FakeVaultProvider(
-          pickResult: const VaultGrant(id: 'a', displayName: 'A'),
-          files: {'A.md': _bytes('a')},
-        );
-        final state = VaultState(
-          sampleProvider: FakeVaultProvider(),
-          folderProvider: folder,
-        );
-        await state.init();
-        await state.pickFolder();
+    test('switchVault to a grant that fails to restore leaves the PREVIOUS '
+        'vault active and does not drop it from the list', () async {
+      final folder = FakeVaultProvider(
+        pickResult: const VaultGrant(id: 'a', displayName: 'A'),
+        files: {'A.md': _bytes('a')},
+      );
+      final state = VaultState(
+        sampleProvider: FakeVaultProvider(),
+        folderProvider: folder,
+      );
+      await state.init();
+      await state.pickFolder();
 
-        folder.pickResult = const VaultGrant(id: 'b', displayName: 'B');
-        await state.pickFolder();
-        expect(state.activeGrantId, 'b');
+      folder.pickResult = const VaultGrant(id: 'b', displayName: 'B');
+      await state.pickFolder();
+      expect(state.activeGrantId, 'b');
 
-        folder.restoreResult = false;
-        final ok = await state.switchVault('a');
+      folder.restoreResult = false;
+      final ok = await state.switchVault('a');
 
-        expect(ok, false);
-        expect(state.activeGrantId, 'b', reason: 'stays on the working vault');
-        expect(
-          state.vaultGrants.map((g) => g.id),
-          ['a', 'b'],
-          reason: 'a failed switch does not remove the target grant',
-        );
-      },
-    );
+      expect(ok, false);
+      expect(state.activeGrantId, 'b', reason: 'stays on the working vault');
+      expect(state.vaultGrants.map((g) => g.id), [
+        'a',
+        'b',
+      ], reason: 'a failed switch does not remove the target grant');
+    });
 
-    test(
-      'removeVault drops a NON-active grant without disturbing the active '
-      'one',
-      () async {
-        final folder = FakeVaultProvider(
-          pickResult: const VaultGrant(id: 'a', displayName: 'A'),
-          files: {'A.md': _bytes('a')},
-        );
-        final state = VaultState(
-          sampleProvider: FakeVaultProvider(),
-          folderProvider: folder,
-        );
-        await state.init();
-        await state.pickFolder();
+    test('removeVault drops a NON-active grant without disturbing the active '
+        'one', () async {
+      final folder = FakeVaultProvider(
+        pickResult: const VaultGrant(id: 'a', displayName: 'A'),
+        files: {'A.md': _bytes('a')},
+      );
+      final state = VaultState(
+        sampleProvider: FakeVaultProvider(),
+        folderProvider: folder,
+      );
+      await state.init();
+      await state.pickFolder();
 
-        folder.pickResult = const VaultGrant(id: 'b', displayName: 'B');
-        await state.pickFolder();
-        expect(state.activeGrantId, 'b');
+      folder.pickResult = const VaultGrant(id: 'b', displayName: 'B');
+      await state.pickFolder();
+      expect(state.activeGrantId, 'b');
 
-        await state.removeVault('a');
+      await state.removeVault('a');
 
-        expect(state.vaultGrants.map((g) => g.id), ['b']);
-        expect(state.activeGrantId, 'b');
-        expect(state.vaultName, 'B');
-      },
-    );
+      expect(state.vaultGrants.map((g) => g.id), ['b']);
+      expect(state.activeGrantId, 'b');
+      expect(state.vaultName, 'B');
+    });
 
-    test(
-      'removeVault on the ACTIVE grant automatically activates another '
-      'remaining vault',
-      () async {
-        final folder = FakeVaultProvider(
-          pickResult: const VaultGrant(id: 'a', displayName: 'A'),
-          files: {'A.md': _bytes('a')},
-        );
-        final state = VaultState(
-          sampleProvider: FakeVaultProvider(),
-          folderProvider: folder,
-        );
-        await state.init();
-        await state.pickFolder();
+    test('removeVault on the ACTIVE grant automatically activates another '
+        'remaining vault', () async {
+      final folder = FakeVaultProvider(
+        pickResult: const VaultGrant(id: 'a', displayName: 'A'),
+        files: {'A.md': _bytes('a')},
+      );
+      final state = VaultState(
+        sampleProvider: FakeVaultProvider(),
+        folderProvider: folder,
+      );
+      await state.init();
+      await state.pickFolder();
 
-        folder.pickResult = const VaultGrant(id: 'b', displayName: 'B');
-        folder.files
-          ..clear()
-          ..addAll({'B.md': _bytes('b')});
-        await state.pickFolder();
-        expect(state.activeGrantId, 'b');
+      folder.pickResult = const VaultGrant(id: 'b', displayName: 'B');
+      folder.files
+        ..clear()
+        ..addAll({'B.md': _bytes('b')});
+      await state.pickFolder();
+      expect(state.activeGrantId, 'b');
 
-        folder.files
-          ..clear()
-          ..addAll({'A.md': _bytes('a')});
-        await state.removeVault('b');
+      folder.files
+        ..clear()
+        ..addAll({'A.md': _bytes('a')});
+      await state.removeVault('b');
 
-        expect(state.vaultGrants.map((g) => g.id), ['a']);
-        expect(state.activeGrantId, 'a');
-        expect(state.vaultName, 'A');
-        expect(state.entries.map((e) => e.name), ['A.md']);
-      },
-    );
+      expect(state.vaultGrants.map((g) => g.id), ['a']);
+      expect(state.activeGrantId, 'a');
+      expect(state.vaultName, 'A');
+      expect(state.entries.map((e) => e.name), ['A.md']);
+    });
 
     test(
       'removeVault on the last remaining vault leaves no active vault',
@@ -371,73 +359,62 @@ void main() {
       },
     );
 
-    test(
-      'a v1 single-grant install migrates onto the new list format at init, '
-      'as the sole active vault',
-      () async {
-        SharedPreferences.setMockInitialValues({
-          'vault.grant': jsonEncode({
-            'id': 'tree-1',
-            'displayName': 'My Docs',
-          }),
-        });
-        final folder = FakeVaultProvider(files: {'A.md': _bytes('a')});
-        final state = VaultState(
-          sampleProvider: FakeVaultProvider(),
-          folderProvider: folder,
-        );
+    test('a v1 single-grant install migrates onto the new list format at init, '
+        'as the sole active vault', () async {
+      SharedPreferences.setMockInitialValues({
+        'vault.grant': jsonEncode({'id': 'tree-1', 'displayName': 'My Docs'}),
+      });
+      final folder = FakeVaultProvider(files: {'A.md': _bytes('a')});
+      final state = VaultState(
+        sampleProvider: FakeVaultProvider(),
+        folderProvider: folder,
+      );
 
-        await state.init();
+      await state.init();
 
-        expect(state.vaultGrants, [
-          const VaultGrant(id: 'tree-1', displayName: 'My Docs'),
-        ]);
-        expect(state.activeGrantId, 'tree-1');
-        expect(state.vaultName, 'My Docs');
-        expect(state.entries.map((e) => e.name), ['A.md']);
+      expect(state.vaultGrants, [
+        const VaultGrant(id: 'tree-1', displayName: 'My Docs'),
+      ]);
+      expect(state.activeGrantId, 'tree-1');
+      expect(state.vaultName, 'My Docs');
+      expect(state.entries.map((e) => e.name), ['A.md']);
 
-        final prefs = await SharedPreferences.getInstance();
-        expect(
-          prefs.getString('vault.grant'),
-          isNull,
-          reason: 'the legacy key is cleared once migrated',
-        );
-        expect(jsonDecode(prefs.getString('vault.grants')!), [
-          {'id': 'tree-1', 'displayName': 'My Docs'},
-        ]);
-      },
-    );
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getString('vault.grant'),
+        isNull,
+        reason: 'the legacy key is cleared once migrated',
+      );
+      expect(jsonDecode(prefs.getString('vault.grants')!), [
+        {'id': 'tree-1', 'displayName': 'My Docs'},
+      ]);
+    });
 
-    test(
-      'a persisted multi-vault list restores the active grant and keeps '
-      'the rest available, unrestored, for switchVault',
-      () async {
-        SharedPreferences.setMockInitialValues({
-          'vault.grants': jsonEncode([
-            {'id': 'a', 'displayName': 'A'},
-            {'id': 'b', 'displayName': 'B'},
-          ]),
-          'vault.activeGrantId': 'b',
-        });
-        final folder = FakeVaultProvider(files: {'B.md': _bytes('b')});
-        final state = VaultState(
-          sampleProvider: FakeVaultProvider(),
-          folderProvider: folder,
-        );
+    test('a persisted multi-vault list restores the active grant and keeps '
+        'the rest available, unrestored, for switchVault', () async {
+      SharedPreferences.setMockInitialValues({
+        'vault.grants': jsonEncode([
+          {'id': 'a', 'displayName': 'A'},
+          {'id': 'b', 'displayName': 'B'},
+        ]),
+        'vault.activeGrantId': 'b',
+      });
+      final folder = FakeVaultProvider(files: {'B.md': _bytes('b')});
+      final state = VaultState(
+        sampleProvider: FakeVaultProvider(),
+        folderProvider: folder,
+      );
 
-        await state.init();
+      await state.init();
 
-        expect(state.vaultGrants.map((g) => g.id), ['a', 'b']);
-        expect(state.activeGrantId, 'b');
-        expect(state.vaultName, 'B');
-        expect(state.entries.map((e) => e.name), ['B.md']);
-        expect(
-          folder.restoreCalls,
-          [const VaultGrant(id: 'b', displayName: 'B')],
-          reason: 'only the ACTIVE grant is restored at cold start',
-        );
-      },
-    );
+      expect(state.vaultGrants.map((g) => g.id), ['a', 'b']);
+      expect(state.activeGrantId, 'b');
+      expect(state.vaultName, 'B');
+      expect(state.entries.map((e) => e.name), ['B.md']);
+      expect(folder.restoreCalls, [
+        const VaultGrant(id: 'b', displayName: 'B'),
+      ], reason: 'only the ACTIVE grant is restored at cold start');
+    });
   });
 
   group('VaultState.readDoc — recents', () {
