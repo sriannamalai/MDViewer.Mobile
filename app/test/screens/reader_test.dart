@@ -33,11 +33,17 @@ Uint8List _bytes(String s) => Uint8List.fromList(utf8.encode(s));
 
 /// Same device-free fake `vault_state_test.dart` uses.
 class _FakeVaultProvider implements VaultProvider {
-  _FakeVaultProvider({Map<String, Uint8List>? files}) : files = files ?? {};
+  _FakeVaultProvider({Map<String, Uint8List>? files, this.pickResult})
+    : files = files ?? {};
   final Map<String, Uint8List> files;
 
+  /// Issue #8's "Choose folder" flow test seam — the grant [pickFolder]
+  /// returns; null (the default) mirrors every pre-existing test's
+  /// "picker not exercised" assumption.
+  VaultGrant? pickResult;
+
   @override
-  Future<VaultGrant?> pickFolder() async => null;
+  Future<VaultGrant?> pickFolder() async => pickResult;
 
   @override
   Future<bool> restore(VaultGrant grant) async => true;
@@ -1623,4 +1629,155 @@ void main() {
     );
     expect(field.controller!.text, 'Ambiguous Page');
   });
+
+  // ── "Open with" folder-context banner (issue #8) ──────────────────
+
+  testWidgets('an "Open with" document with unresolved relative refs shows '
+      'the folder banner', (tester) async {
+    final vault = VaultState(
+      sampleProvider: _FakeVaultProvider(),
+      folderProvider: _FakeVaultProvider(),
+    );
+    await vault.init();
+    // _FakeDocRenderer's fixture always carries an `img/x.png` relative
+    // image reference regardless of the markdown text below.
+    final entry = vault.openSingleFile(
+      name: 'Loose.md',
+      bytes: _bytes('# Hello\n'),
+    );
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining("Opened without its folder"),
+      findsOneWidget,
+    );
+    expect(find.text('Choose folder'), findsOneWidget);
+  });
+
+  testWidgets(
+    'a sample document never shows the open-with folder banner',
+    (tester) async {
+      final entry = _sampleEntry();
+      final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+      final appState = AppState();
+      await appState.init();
+      final renderer = _FakeDocRenderer();
+
+      await tester.pumpWidget(
+        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Opened without its folder'), findsNothing);
+    },
+  );
+
+  testWidgets('dismissing the open-with banner hides it', (tester) async {
+    final vault = VaultState(
+      sampleProvider: _FakeVaultProvider(),
+      folderProvider: _FakeVaultProvider(),
+    );
+    await vault.init();
+    final entry = vault.openSingleFile(
+      name: 'Loose.md',
+      bytes: _bytes('# Hello\n'),
+    );
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Opened without its folder'), findsOneWidget);
+
+    await tester.tap(find.text('✕'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Opened without its folder'), findsNothing);
+  });
+
+  testWidgets(
+    'choosing a folder with exactly one matching file replaces the Reader',
+    (tester) async {
+      final folderProvider = _FakeVaultProvider(
+        pickResult: const VaultGrant(id: 'tree-1', displayName: 'Notes'),
+        files: {'Loose.md': _bytes('# Loose\n')},
+      );
+      final vault = VaultState(
+        sampleProvider: _FakeVaultProvider(),
+        folderProvider: folderProvider,
+      );
+      await vault.init();
+      final entry = vault.openSingleFile(
+        name: 'Loose.md',
+        bytes: _bytes('# Hello\n'),
+      );
+      final appState = AppState();
+      await appState.init();
+      final renderer = _FakeDocRenderer();
+
+      await tester.pumpWidget(
+        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Choose folder'));
+      await tester.pumpAndSettle();
+
+      final readerWidget = tester.widget<ReaderScreen>(
+        find.byType(ReaderScreen),
+      );
+      expect(readerWidget.entry.source, VaultSource.folder);
+      expect(readerWidget.entry.relPath, 'Loose.md');
+      expect(
+        find.byType(ReaderScreen, skipOffstage: false),
+        findsOneWidget,
+        reason: 'pushReplacement — no stacked duplicate of the same doc',
+      );
+    },
+  );
+
+  testWidgets(
+    'choosing a folder with no matching file dismisses the banner and '
+    'reports the miss',
+    (tester) async {
+      final folderProvider = _FakeVaultProvider(
+        pickResult: const VaultGrant(id: 'tree-1', displayName: 'Notes'),
+        files: {'Other.md': _bytes('# Other\n')},
+      );
+      final vault = VaultState(
+        sampleProvider: _FakeVaultProvider(),
+        folderProvider: folderProvider,
+      );
+      await vault.init();
+      final entry = vault.openSingleFile(
+        name: 'Loose.md',
+        bytes: _bytes('# Hello\n'),
+      );
+      final appState = AppState();
+      await appState.init();
+      final renderer = _FakeDocRenderer();
+
+      await tester.pumpWidget(
+        _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Choose folder'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining("Couldn't find"), findsOneWidget);
+      expect(find.textContaining('Opened without its folder'), findsNothing);
+      expect(find.byType(ReaderScreen, skipOffstage: false), findsOneWidget);
+    },
+  );
 }

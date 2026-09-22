@@ -32,6 +32,7 @@ import '../state/doc_state.dart';
 import '../state/vault_state.dart';
 import '../tokens.dart';
 import '../util/share_filename.dart';
+import '../vault/search.dart' show VaultSearch;
 import '../vault/vault_entry.dart';
 import '../vault/vault_path.dart';
 import '../vault/vault_source.dart';
@@ -215,6 +216,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
   double _renderedScale = AppState.defaultTextScale;
   Brightness? _renderedBrightness;
 
+  /// Issue #8: true when this document was opened via the OS "Open with
+  /// MDViewer" flow ([VaultSource.openedFile]) AND carries at least one
+  /// relative link/image target — which can NEVER resolve for that
+  /// source (`OpenedFileVaultProvider` only ever holds the one file
+  /// itself, no folder context; see its class doc). Computed once in
+  /// [_load]; drives [_OpenWithFolderBanner] in [build].
+  bool _openWithHasUnresolvedRefs = false;
+
+  /// User-dismissed the banner above without picking a folder — reset
+  /// per document instance (a fresh open-with delivery gets the banner
+  /// again), never persisted (this is a one-time nudge, not a setting).
+  bool _openWithBannerDismissed = false;
+
   String get _prefsKey =>
       'reader.scroll.${widget.entry.source.name}:${widget.entry.relPath}';
 
@@ -284,6 +298,21 @@ class _ReaderScreenState extends State<ReaderScreen> {
       final markdown = utf8.decode(bytes, allowMalformed: true);
       final parsed = _renderer.parse(markdown);
       final model = DocModel.analyze(parsed);
+      // Issue #8: an "Open with" document has no folder context, so ANY
+      // relative link/image target is unresolvable by construction —
+      // flag it here (once, at load) rather than discovering it only
+      // when a broken image placeholder or an inert link tap surprises
+      // the user. `collectResolvables`' kind 0/1 are link/image (2 is
+      // wiki-link, handled separately — issue #10's resolver already
+      // gives it the same treatment via the Search fallback, so it's not
+      // double-counted here).
+      final hasUnresolvedRefs =
+          widget.entry.source == VaultSource.openedFile &&
+          collectResolvables(parsed).any(
+            (r) =>
+                (r.kind == 0 || r.kind == 1) &&
+                DocImages.looksRelativeTarget(r.target),
+          );
 
       final prefs = await SharedPreferences.getInstance();
 
@@ -345,6 +374,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _docState = docState;
         _engine = engine;
         _status = _LoadStatus.ready;
+        _openWithHasUnresolvedRefs = hasUnresolvedRefs;
       });
       if (engine == ReaderEngine.webview) {
         await _renderInto();
@@ -926,6 +956,53 @@ class _ReaderScreenState extends State<ReaderScreen> {
     await pushReader(context, found);
   }
 
+  /// Issue #8's banner action: prompts the OS folder picker (the SAME
+  /// [VaultState.pickFolder] the Library's "Choose folder" empty state
+  /// uses), then tries to re-open THIS document from the newly-picked
+  /// folder vault — matched by filename (case-insensitive; an open-with
+  /// delivery only ever carries the bare filename, never a path, so
+  /// there's no directory to match against). Exactly one match replaces
+  /// this Reader (`pushReplacement`: same logical document, now with
+  /// folder context — unlike a link tap, there's no "linking document"
+  /// to keep on the back stack for). Zero or more than one match
+  /// dismisses the banner (picking again would just repeat the same
+  /// ambiguity) and tells the user via the existing snackbar pattern
+  /// (issue #4's [_showFragmentUnresolvedHint] precedent) rather than
+  /// silently doing nothing. A cancelled picker is a no-op — the banner
+  /// stays, so the user can try again.
+  Future<void> _chooseFolderForOpenWithDoc() async {
+    final vault = context.read<VaultState>();
+    final picked = await vault.pickFolder();
+    if (!picked || !mounted) return;
+
+    final matches = VaultSearch.flattenMarkdownFiles(vault.entries)
+        .where(
+          (e) => e.name.toLowerCase() == widget.entry.name.toLowerCase(),
+        )
+        .toList();
+    if (matches.length == 1) {
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => ReaderScreen(entry: matches.single),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _openWithBannerDismissed = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          matches.isEmpty
+              ? "Couldn't find \"${widget.entry.name}\" in that folder"
+              : 'Found more than one "${widget.entry.name}" in that '
+                    'folder — open it from the Library instead',
+        ),
+      ),
+    );
+  }
+
   Future<void> _share() async {
     final doc = _parsedDoc;
     if (doc == null || !mounted) return;
@@ -1097,6 +1174,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
               height: _hairlineHeight,
               progress: docState?.progress ?? 0,
             ),
+            if (_status == _LoadStatus.ready &&
+                _openWithHasUnresolvedRefs &&
+                !_openWithBannerDismissed)
+              _OpenWithFolderBanner(
+                onChooseFolder: _chooseFolderForOpenWithDoc,
+                onDismiss: () =>
+                    setState(() => _openWithBannerDismissed = true),
+              ),
             Expanded(child: _buildContent(tokens)),
             _BottomBar(
               contentHeight: _bottomBarContentHeight,
@@ -1149,6 +1234,76 @@ class _ReaderScreenState extends State<ReaderScreen> {
         }
         return WebViewWidget(controller: _ensureController());
     }
+  }
+}
+
+/// Issue #8's inline banner: shown atop the content when a document
+/// opened via the OS "Open with MDViewer" flow carries at least one
+/// relative link/image target that can never resolve without folder
+/// context (— [_ReaderScreenState._openWithHasUnresolvedRefs]'s doc
+/// comment). Actionable ("Choose folder") rather than a silent broken-
+/// image/inert-link experience; dismissible for a user who doesn't care.
+class _OpenWithFolderBanner extends StatelessWidget {
+  const _OpenWithFolderBanner({
+    required this.onChooseFolder,
+    required this.onDismiss,
+  });
+
+  final VoidCallback onChooseFolder;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppTokens.of(context);
+
+    return Container(
+      color: tokens.accentSoft,
+      padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              "Opened without its folder — relative links and images "
+              "can't resolve.",
+              style: TextStyle(
+                fontFamily: AppFonts.ibmPlexSans,
+                fontSize: AppTypeScale.uiTextSize,
+                color: tokens.text,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: onChooseFolder,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Text(
+                'Choose folder',
+                style: TextStyle(
+                  fontFamily: AppFonts.ibmPlexSans,
+                  fontSize: AppTypeScale.uiTextSize,
+                  fontWeight: FontWeight.w600,
+                  color: tokens.accent,
+                ),
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: onDismiss,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                '✕',
+                style: TextStyle(
+                  fontSize: AppTypeScale.searchClearGlyphSize,
+                  color: tokens.text3,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
