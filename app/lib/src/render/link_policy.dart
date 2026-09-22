@@ -91,10 +91,31 @@ final class LinkFragment extends LinkDecision {
   String toString() => 'LinkFragment($fragment)';
 }
 
-/// Everything else is an explicit no-op: `mailto:`/`tel:`/`data:`/
-/// `file:`/`about:`/unknown schemes, non-Markdown relative targets, a
-/// pure `?query` (no fragment), and anything [Uri.tryParse] cannot
-/// parse.
+/// A `mailto:`/`tel:` link (issue #15): the library's URL allowlist
+/// permits both, but unlike `http(s)` a tap here leaves the app for the
+/// Mail/Phone app with no in-app undo, so the consumer must show a brief
+/// confirmation ("Open in Mail/Phone app?") BEFORE handing [uri] to
+/// `url_launcher` — never launch straight from this decision the way
+/// [LinkExternal] does.
+final class LinkConfirmExternal extends LinkDecision {
+  const LinkConfirmExternal(this.uri);
+
+  final Uri uri;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LinkConfirmExternal && other.uri == uri;
+
+  @override
+  int get hashCode => Object.hash(LinkConfirmExternal, uri);
+
+  @override
+  String toString() => 'LinkConfirmExternal($uri)';
+}
+
+/// Everything else is an explicit no-op: `data:`/`file:`/`about:`/unknown
+/// schemes, non-Markdown relative targets, a pure `?query` (no
+/// fragment), and anything [Uri.tryParse] cannot parse.
 final class LinkDecline extends LinkDecision {
   const LinkDecline();
 
@@ -111,17 +132,18 @@ final class LinkDecline extends LinkDecision {
 /// Decides what a tapped link should do. The table, mirroring the
 /// webview delegate's tap semantics exactly:
 ///
-/// | URL shape                                   | decision           |
-/// |---------------------------------------------|--------------------|
-/// | unparseable                                 | [LinkDecline]      |
-/// | `http:`/`https:` (any case — Uri normalizes)| [LinkExternal]     |
-/// | scheme-less ending `.md`/`.markdown` (any   | [LinkInternalMd]   |
-///   case), after `#`/`?` stripping            |                    |
-/// | scheme-less, pure `#fragment` (non-empty)   | [LinkFragment]     |
-/// | scheme-less, anything else (non-md target,  | [LinkDecline]      |
-///   pure `?query`, or an empty `#`)           |                    |
-/// | every other scheme (`mailto:`, `tel:`,      | [LinkDecline]      |
-///   `data:`, `file:`, `about:`, unknown)      |                    |
+/// | URL shape                                   | decision              |
+/// |---------------------------------------------|-----------------------|
+/// | unparseable                                 | [LinkDecline]         |
+/// | `http:`/`https:` (any case — Uri normalizes)| [LinkExternal]        |
+/// | `mailto:`/`tel:` (any case)                  | [LinkConfirmExternal] |
+/// | scheme-less ending `.md`/`.markdown` (any   | [LinkInternalMd]      |
+///   case), after `#`/`?` stripping            |                       |
+/// | scheme-less, pure `#fragment` (non-empty)   | [LinkFragment]        |
+/// | scheme-less, anything else (non-md target,  | [LinkDecline]         |
+///   pure `?query`, or an empty `#`)           |                       |
+/// | every other scheme (`data:`, `file:`,       | [LinkDecline]         |
+///   `about:`, unknown)                        |                       |
 ///
 /// [platform] is deliberately required even though today's table is
 /// platform-uniform — v1's one platform split (Android's internal-nav
@@ -135,6 +157,10 @@ LinkDecision decideLinkTap(String url, {required TargetPlatform platform}) {
 
   if (uri.scheme == 'http' || uri.scheme == 'https') {
     return LinkExternal(uri);
+  }
+
+  if (uri.scheme == 'mailto' || uri.scheme == 'tel') {
+    return LinkConfirmExternal(uri);
   }
 
   if (uri.scheme.isEmpty) {

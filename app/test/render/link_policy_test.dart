@@ -96,12 +96,40 @@ void main() {
     });
   });
 
+  group('mailto/tel confirmation (issue #15)', () {
+    test('mailto: and tel: resolve to LinkConfirmExternal on BOTH '
+        'platforms — the consumer must confirm before launching, never '
+        'launch straight from the decision', () {
+      for (final platform in platforms) {
+        expect(
+          decideLinkTap('mailto:a@b.c', platform: platform),
+          LinkConfirmExternal(Uri.parse('mailto:a@b.c')),
+        );
+        expect(
+          decideLinkTap('tel:+15551234567', platform: platform),
+          LinkConfirmExternal(Uri.parse('tel:+15551234567')),
+        );
+      }
+    });
+
+    test('scheme matching is case-insensitive', () {
+      for (final platform in platforms) {
+        expect(
+          decideLinkTap('MAILTO:a@b.c', platform: platform),
+          isA<LinkConfirmExternal>(),
+        );
+        expect(
+          decideLinkTap('TEL:+15551234567', platform: platform),
+          isA<LinkConfirmExternal>(),
+        );
+      }
+    });
+  });
+
   group('decline table (mirrors the webview delegate)', () {
-    test('mailto/tel/data/file/unknown schemes all decline', () {
+    test('data/file/unknown schemes all decline', () {
       for (final platform in platforms) {
         for (final url in [
-          'mailto:a@b.c',
-          'tel:+15551234567',
           'data:text/html,x',
           'file:///etc/passwd',
           'ftp://example.com/x',

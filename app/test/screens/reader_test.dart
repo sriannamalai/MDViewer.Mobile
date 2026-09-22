@@ -1235,8 +1235,8 @@ void main() {
   });
 
   testWidgets('native link taps that must not navigate: a blocked link is a '
-      'defensive no-op, and declined shapes (pure #fragment, mailto:) '
-      'stay put', (tester) async {
+      'defensive no-op, and a declined shape (pure #fragment to a '
+      'nonexistent heading) stays put', (tester) async {
     final entry = _sampleEntry();
     final vault = await _vaultWith(
       entry,
@@ -1260,13 +1260,106 @@ void main() {
     // change upstream must not turn into a navigation here.
     onLinkTap('Other.md', true, null);
     await tester.pumpAndSettle();
-    // Declined shapes from the pure table.
+    // A declined shape from the pure table: no heading in this fixture
+    // carries anchorId "section", so the fragment jump is a no-op.
     onLinkTap('#section', false, null);
-    onLinkTap('mailto:a@b.c', false, null);
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
     expect(find.byType(ReaderScreen, skipOffstage: false), findsOneWidget);
+  });
+
+  testWidgets('a native mailto: link tap shows a confirmation sheet before '
+      'launching (issue #15) — Cancel dismisses without launching', (
+    tester,
+  ) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final onLinkTap = tester
+        .widget<NativeDocView>(find.byType(NativeDocView))
+        .onLinkTap!;
+    onLinkTap('mailto:a@b.c', false, null);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Open in Mail?'), findsOneWidget);
+    expect(find.text('mailto:a@b.c'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Open in Mail?'), findsNothing);
+    expect(find.byType(ReaderScreen, skipOffstage: false), findsOneWidget);
+  });
+
+  testWidgets('a native tel: link tap\'s confirmation sheet reads "Phone", '
+      'and tapping Open attempts the hand-off without crashing (issue '
+      '#15)', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final onLinkTap = tester
+        .widget<NativeDocView>(find.byType(NativeDocView))
+        .onLinkTap!;
+    onLinkTap('tel:+15551234567', false, null);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Open in Phone?'), findsOneWidget);
+
+    // No url_launcher platform channel is registered under flutter test —
+    // the launch attempt throws, and _confirmAndLaunch's try/catch must
+    // swallow it (same best-effort, no-toast posture as _openExternal).
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ReaderScreen, skipOffstage: false), findsOneWidget);
+  });
+
+  testWidgets('a webview mailto:/tel: navigation request shows the same '
+      'confirmation sheet (issue #15) — both engines share one '
+      'confirm-then-launch flow', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final decide =
+        platform.controllers.single.navigationDelegate!.onNavigationRequest!;
+    final decision = await decide(
+      const NavigationRequest(url: 'mailto:a@b.c', isMainFrame: true),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      decision,
+      NavigationDecision.prevent,
+      reason: 'the webview never navigates to a mailto:/tel: URL itself',
+    );
+    expect(find.text('Open in Mail?'), findsOneWidget);
   });
 
   testWidgets('the native view gets the LOADED palette for the ambient '

@@ -574,6 +574,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
       unawaited(_openExternal(uri));
       return NavigationDecision.prevent;
     }
+    // mailto:/tel: (issue #15): the library's URL allowlist permits both,
+    // but — unlike http(s) — a tap here leaves the app for the Mail/Phone
+    // app with no in-app undo, so a brief confirmation sheet gates the
+    // hand-off (never launched straight from the navigation request, the
+    // same [LinkConfirmExternal] contract link_policy.dart's native path
+    // follows).
+    if (uri.scheme == 'mailto' || uri.scheme == 'tel') {
+      unawaited(_confirmAndLaunch(uri));
+      return NavigationDecision.prevent;
+    }
     if (uri.scheme.isEmpty) {
       unawaited(_openInternalRelative(request.url));
       return NavigationDecision.prevent;
@@ -599,12 +609,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
         defaultTargetPlatform != TargetPlatform.android) {
       return NavigationDecision.navigate;
     }
-    // Everything else — mailto:, tel:, file:, data:, about: on Android and
-    // non-blank about:* on iOS, unknown schemes — is an explicit decline
-    // now, not a fall-through navigate (which could replace the document
-    // with a blank/error/attacker-authored page). v1 scope: only web links
-    // (external) and vault-relative .md links (internal) actually go
-    // somewhere.
+    // Everything else — file:, data:, about: on Android and non-blank
+    // about:* on iOS, unknown schemes — is an explicit decline now, not a
+    // fall-through navigate (which could replace the document with a
+    // blank/error/attacker-authored page). mailto:/tel: are handled above
+    // (a confirmed hand-off, not a decline); web links (external) and
+    // vault-relative .md links (internal) are the other two shapes that
+    // actually go somewhere.
     return NavigationDecision.prevent;
   }
 
@@ -615,6 +626,112 @@ class _ReaderScreenState extends State<ReaderScreen> {
       // Best-effort: no system browser available / launch declined. No UI
       // feedback per the task brief's scope — a no-op is the safe default.
     }
+  }
+
+  /// The `mailto:`/`tel:` hand-off (issue #15), shared by both engines'
+  /// link-tap paths (the webview delegate and [_handleNativeLinkTap]) so
+  /// the confirmation copy/behavior can't drift between them. Shows a
+  /// brief "Open in Mail/Phone app?" bottom sheet BEFORE calling
+  /// `url_launcher` — unlike an `http(s)` tap ([_openExternal]), leaving
+  /// the app for Mail/Phone has no in-app undo, so the user gets an
+  /// explicit escape hatch rather than an immediate, silent hand-off. A
+  /// declined/dismissed sheet, or any launch failure (no Mail/Phone app
+  /// configured), is a no-op — same best-effort, no-toast posture as
+  /// [_openExternal].
+  Future<void> _confirmAndLaunch(Uri uri) async {
+    final confirmed = await _showConfirmExternalSheet(uri);
+    if (confirmed != true || !mounted) return;
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // Best-effort: no Mail/Phone app configured, or the OS-level launch
+      // was declined. No UI feedback, matching [_openExternal].
+    }
+  }
+
+  /// The confirmation sheet [_confirmAndLaunch] awaits: `null` app names
+  /// its own "Mail"/"Phone" copy from [uri]'s scheme. Resolves to `true`
+  /// (Open tapped), `false` (Cancel tapped), or `null` (dismissed —
+  /// veil tap, drag, back gesture) — [_confirmAndLaunch] treats anything
+  /// but exactly `true` as a decline.
+  Future<bool?> _showConfirmExternalSheet(Uri uri) {
+    final tokens = AppTokens.of(context);
+    final isTel = uri.scheme == 'tel';
+    final appName = isTel ? 'Phone' : 'Mail';
+    return showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: tokens.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppGeometry.sheetRadius),
+        ),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration: BoxDecoration(
+                    color: tokens.line,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(
+                'Open in $appName?',
+                style: TextStyle(
+                  fontFamily: AppFonts.ibmPlexSans,
+                  fontSize: AppTypeScale.h3Size,
+                  fontWeight: AppTypeScale.h3Weight,
+                  color: tokens.text,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                uri.toString(),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: AppFonts.jetBrainsMono,
+                  fontSize: AppTypeScale.uiMetaSizeMax,
+                  color: tokens.text3,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: _SheetActionButton(
+                      label: 'Cancel',
+                      color: tokens.panel2,
+                      textColor: tokens.text,
+                      onTap: () => Navigator.of(sheetContext).pop(false),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _SheetActionButton(
+                      label: 'Open',
+                      color: tokens.accentSoft,
+                      textColor: tokens.accent,
+                      onTap: () => Navigator.of(sheetContext).pop(true),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// Internal relative `.md` link handling (design/README.md §Interactions):
@@ -656,6 +773,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
   ///   practice — but a policy change upstream must not turn into a
   ///   navigation here).
   /// - [LinkExternal] → the same [_openExternal] the webview path uses.
+  /// - [LinkConfirmExternal] → [_confirmAndLaunch] (issue #15): the same
+  ///   confirm-then-launch flow the webview delegate's mailto:/tel:
+  ///   branch uses.
   /// - [LinkInternalMd] → resolve against this entry's directory and
   ///   push a Reader on BOTH platforms — natively retiring the v1
   ///   webview path's Android internal-nav no-op (and, as of issue #6,
@@ -664,13 +784,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
   /// - [LinkFragment] → [_jumpToFragment]: resolves against this
   ///   document's own headings (`anchorId`), the native equivalent of
   ///   the webview engine's in-page anchor jump.
-  /// - [LinkDecline] → no-op (mailto/tel/data/about/unknown, non-md
-  ///   targets, pure `?query`).
+  /// - [LinkDecline] → no-op (data/about/unknown, non-md targets, pure
+  ///   `?query`).
   void _handleNativeLinkTap(String url, bool blocked, String? source) {
     if (blocked) return;
     switch (decideLinkTap(url, platform: defaultTargetPlatform)) {
       case LinkExternal(:final uri):
         unawaited(_openExternal(uri));
+      case LinkConfirmExternal(:final uri):
+        unawaited(_confirmAndLaunch(uri));
       case LinkInternalMd(:final target):
         unawaited(_openInternalMd(target));
       case LinkFragment(:final fragment):
@@ -1355,6 +1477,51 @@ class _EngineSelector extends StatelessWidget {
           }).toList(),
         ),
       ],
+    );
+  }
+}
+
+/// A full-width, [AppGeometry.minTapTarget]-tall pill button — the
+/// mailto:/tel: confirmation sheet's Cancel/Open pair
+/// ([_showConfirmExternalSheet], issue #15). Not reused elsewhere yet, but
+/// kept as its own widget (rather than inlined `Material`/`InkWell` per
+/// button) since the sheet needs the exact same shape twice with only
+/// color/label/callback varying.
+class _SheetActionButton extends StatelessWidget {
+  const _SheetActionButton({
+    required this.label,
+    required this.color,
+    required this.textColor,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final Color textColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color,
+      borderRadius: BorderRadius.circular(AppGeometry.radiusButtonMax),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppGeometry.radiusButtonMax),
+        onTap: onTap,
+        child: Container(
+          height: AppGeometry.minTapTarget,
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontFamily: AppFonts.ibmPlexSans,
+              fontSize: AppTypeScale.uiTextSize,
+              fontWeight: FontWeight.w600,
+              color: textColor,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
