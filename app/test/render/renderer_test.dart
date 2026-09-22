@@ -316,5 +316,5 @@ class _TreeDocRenderer extends DocRenderer {
   static const MdvTree canned = MdvTree(version: 1, blocks: [], footnotes: []);
 
   @override
-  MdvTree renderTree(Object doc) => canned;
+  MdvTree renderTree(Object doc, {MdvResolver? resolver}) => canned;
 }

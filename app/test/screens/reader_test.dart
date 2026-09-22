@@ -3,8 +3,10 @@ import 'dart:typed_data';
 
 import 'package:app/src/render/native_palette.dart';
 import 'package:app/src/render/renderer.dart';
+import 'package:app/src/render/wiki_link.dart';
 import 'package:app/src/screens/native_doc_view.dart';
 import 'package:app/src/screens/reader.dart';
+import 'package:app/src/screens/search.dart';
 import 'package:app/src/state/app_state.dart';
 import 'package:app/src/state/vault_state.dart';
 import 'package:app/src/tokens.dart';
@@ -1415,5 +1417,128 @@ void main() {
       false,
       true,
     ], reason: 'the cached pair serves the flip — no async gap mid-flip');
+  });
+
+  // ── Wiki-link resolution (issue #10) ──────────────────────────────
+
+  testWidgets('renderTree receives a wiki-link resolver wired to the '
+      'vault\'s own markdown files', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(
+      entry,
+      '# Hello\n\none two three\n',
+      extraFiles: {'Other.md': _bytes('# Other\n')},
+    );
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final resolver = renderer.lastTreeResolver;
+    expect(resolver, isNotNull);
+    expect(resolver!(MdvResolveKind.wikiLink, 'Other'), 'Other.md');
+    expect(
+      Uri.parse(resolver(MdvResolveKind.wikiLink, 'Nonexistent')!).scheme,
+      wikiSearchScheme,
+      reason: 'an unresolved target falls back to the search marker',
+    );
+  });
+
+  testWidgets('render (webview) combines the image resolver with the '
+      'wiki-link resolver', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(
+      entry,
+      '# Hello\n\none two three\n',
+      extraFiles: {
+        'Other.md': _bytes('# Other\n'),
+        'img/x.png': Uint8List.fromList([1, 2, 3]),
+      },
+    );
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final resolver = renderer.lastResolver!;
+    expect(resolver(MdvResolveKind.wikiLink, 'Other'), 'Other.md');
+    expect(
+      resolver(MdvResolveKind.image, 'img/x.png'),
+      startsWith('data:image/png;base64,'),
+      reason:
+          'the image resolver must keep working once combined with the '
+          'wiki-link resolver',
+    );
+  });
+
+  testWidgets('a native wiki-link Search-fallback tap opens Search '
+      'pre-filled with the raw target', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = FakeTreeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final onLinkTap = tester
+        .widget<NativeDocView>(find.byType(NativeDocView))
+        .onLinkTap!;
+    onLinkTap(wikiSearchUri('Nonexistent Page').toString(), false, 'wikiLink');
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SearchScreen), findsOneWidget);
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(SearchScreen),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(field.controller!.text, 'Nonexistent Page');
+  });
+
+  testWidgets('a webview wiki-link Search-fallback navigation opens Search '
+      'pre-filled with the raw target', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    final decide =
+        platform.controllers.single.navigationDelegate!.onNavigationRequest!;
+    final decision = await decide(
+      NavigationRequest(
+        url: wikiSearchUri('Ambiguous Page').toString(),
+        isMainFrame: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(decision, NavigationDecision.prevent);
+    expect(find.byType(SearchScreen), findsOneWidget);
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(SearchScreen),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(field.controller!.text, 'Ambiguous Page');
   });
 }

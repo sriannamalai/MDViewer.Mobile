@@ -21,7 +21,7 @@ import '../vault/search.dart';
 /// design/README.md's state-management section lists `searchQuery` +
 /// filters + results as vault-index-wide, not scoped to one section.
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key, this.autofocus = false});
+  const SearchScreen({super.key, this.autofocus = false, this.initialQuery});
 
   /// Requests keyboard focus once, right after this screen first builds —
   /// `AppShell` sets this true only when the user arrived via the Library
@@ -30,6 +30,15 @@ class SearchScreen extends StatefulWidget {
   /// `_openSearchFromLibrary` doc comment for why a key bump (not a
   /// persisted flag) is the mechanism.
   final bool autofocus;
+
+  /// Pre-fills the query field and runs an immediate search on first
+  /// build — the Reader's wiki-link Search fallback (issue #10: an
+  /// ambiguous or unresolved `[[Page Name]]` target) pushes a standalone
+  /// [SearchScreen] with this set, so the user lands straight on results
+  /// for the wiki-link's raw text instead of an empty query field. Null
+  /// (every other caller — the tab bar, the Library search field's
+  /// tap-through) leaves the field empty, exactly as before this existed.
+  final String? initialQuery;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -56,6 +65,16 @@ class _SearchScreenState extends State<SearchScreen> {
   void initState() {
     super.initState();
     _controller.addListener(_onQueryChanged);
+    final initialQuery = widget.initialQuery;
+    if (initialQuery != null && initialQuery.isNotEmpty) {
+      // Setting .text fires the listener above, which already schedules a
+      // debounced search — the immediate call right after cancels that
+      // timer and runs it now instead, since arriving here is itself a
+      // deliberate action (the wiki-link Search fallback), not a keystroke
+      // that should wait out the usual typing debounce.
+      _controller.text = initialQuery;
+      _scheduleSearch(immediate: true);
+    }
     if (widget.autofocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _focusNode.requestFocus();

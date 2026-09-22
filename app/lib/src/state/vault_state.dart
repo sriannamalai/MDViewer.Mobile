@@ -8,6 +8,7 @@ import '../vault/platform_vault_provider.dart';
 import '../vault/recent_entry.dart';
 import '../vault/recents_store.dart';
 import '../vault/sample_vault_provider.dart';
+import '../vault/search.dart' show VaultSearch;
 import '../vault/vault_entry.dart';
 import '../vault/vault_grant.dart';
 import '../vault/vault_index.dart';
@@ -218,6 +219,32 @@ class VaultState extends ChangeNotifier {
       case VaultSource.openedFile:
         final entry = _openedFileEntry;
         return (entry != null && entry.relPath == relPath) ? entry : null;
+    }
+  }
+
+  /// Every Markdown file's vault-relative path in [source]'s tree —
+  /// vault-WIDE, not scoped to any one document's directory. The
+  /// wiki-link resolver (`render/wiki_link.dart`, issue #10) matches a
+  /// `[[...]]` target against exactly this list, for the SAME vault the
+  /// linking document lives in (a folder-vault document's wiki-links
+  /// never resolve against the bundled Samples, and vice versa).
+  /// [VaultSource.openedFile] has no tree at all — [_openedFileEntry] is
+  /// at most one file — so it always returns empty: an "Open with"
+  /// document's wiki-links have nothing to resolve against, the same
+  /// posture as its unresolved relative links/images (issue #8).
+  List<String> markdownRelPaths(VaultSource source) {
+    switch (source) {
+      case VaultSource.sample:
+        return [
+          for (final e in VaultSearch.flattenMarkdownFiles(_sampleEntries))
+            e.relPath,
+        ];
+      case VaultSource.folder:
+        return [
+          for (final e in VaultSearch.flattenMarkdownFiles(_entries)) e.relPath,
+        ];
+      case VaultSource.openedFile:
+        return const [];
     }
   }
 

@@ -261,6 +261,11 @@ class FakeTreeDocRenderer extends DocRenderer {
   /// `_FakeDocRenderer.lastResolver`).
   MdvResolver? lastResolver;
 
+  /// The resolver the most recent [renderTree] call received — lets a
+  /// test assert the Reader wires the wiki-link resolver
+  /// (`render/wiki_link.dart`, issue #10) into the native path too.
+  MdvResolver? lastTreeResolver;
+
   @override
   Map<String, dynamic> parse(String markdown) {
     parseCalls++;
@@ -290,8 +295,9 @@ class FakeTreeDocRenderer extends DocRenderer {
   }
 
   @override
-  MdvTree renderTree(Object doc) {
+  MdvTree renderTree(Object doc, {MdvResolver? resolver}) {
     renderTreeCalls++;
+    lastTreeResolver = resolver;
     final error = throwOnRenderTree;
     if (error != null) throw error;
     return _treeBuilder();

@@ -126,6 +126,30 @@ void main() {
     });
   });
 
+  group('wiki-link Search fallback (issue #10)', () {
+    test('the mdvwiki: search marker resolves to LinkOpenSearch carrying '
+        'the query on BOTH platforms', () {
+      for (final platform in platforms) {
+        expect(
+          decideLinkTap(
+            'mdvwiki://search?q=Page%20Name',
+            platform: platform,
+          ),
+          const LinkOpenSearch('Page Name'),
+        );
+      }
+    });
+
+    test('a missing q parameter decodes to an empty query, never a crash', () {
+      for (final platform in platforms) {
+        expect(
+          decideLinkTap('mdvwiki://search', platform: platform),
+          const LinkOpenSearch(''),
+        );
+      }
+    });
+  });
+
   group('decline table (mirrors the webview delegate)', () {
     test('data/file/unknown schemes all decline', () {
       for (final platform in platforms) {

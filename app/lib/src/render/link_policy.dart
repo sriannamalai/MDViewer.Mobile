@@ -21,6 +21,8 @@ library;
 
 import 'package:flutter/foundation.dart' show TargetPlatform;
 
+import 'wiki_link.dart' show wikiSearchScheme;
+
 /// The verdict for one tapped link URL — a sealed union so consumers
 /// switch exhaustively. Value semantics (`==`) so tests compare
 /// decisions directly.
@@ -113,6 +115,28 @@ final class LinkConfirmExternal extends LinkDecision {
   String toString() => 'LinkConfirmExternal($uri)';
 }
 
+/// The `mdvwiki://search?q=...` marker [wikiLinkResolver] emits (issue
+/// #10) when a `[[...]]` wiki-link's target is ambiguous (more than one
+/// same-stem file) or unresolved (none): [query] is the raw wiki-link
+/// text, and the consumer should open Search pre-filled with it so the
+/// user can disambiguate or discover there's no such page, rather than
+/// silently doing nothing.
+final class LinkOpenSearch extends LinkDecision {
+  const LinkOpenSearch(this.query);
+
+  final String query;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LinkOpenSearch && other.query == query;
+
+  @override
+  int get hashCode => Object.hash(LinkOpenSearch, query);
+
+  @override
+  String toString() => 'LinkOpenSearch($query)';
+}
+
 /// Everything else is an explicit no-op: `data:`/`file:`/`about:`/unknown
 /// schemes, non-Markdown relative targets, a pure `?query` (no
 /// fragment), and anything [Uri.tryParse] cannot parse.
@@ -137,6 +161,8 @@ final class LinkDecline extends LinkDecision {
 /// | unparseable                                 | [LinkDecline]         |
 /// | `http:`/`https:` (any case — Uri normalizes)| [LinkExternal]        |
 /// | `mailto:`/`tel:` (any case)                  | [LinkConfirmExternal] |
+/// | `mdvwiki://search?q=...` (the wiki-link      | [LinkOpenSearch]      |
+///   Search-fallback marker; issue #10)         |                       |
 /// | scheme-less ending `.md`/`.markdown` (any   | [LinkInternalMd]      |
 ///   case), after `#`/`?` stripping            |                       |
 /// | scheme-less, pure `#fragment` (non-empty)   | [LinkFragment]        |
@@ -161,6 +187,10 @@ LinkDecision decideLinkTap(String url, {required TargetPlatform platform}) {
 
   if (uri.scheme == 'mailto' || uri.scheme == 'tel') {
     return LinkConfirmExternal(uri);
+  }
+
+  if (uri.scheme == wikiSearchScheme) {
+    return LinkOpenSearch(uri.queryParameters['q'] ?? '');
   }
 
   if (uri.scheme.isEmpty) {

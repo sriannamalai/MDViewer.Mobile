@@ -25,6 +25,7 @@ import '../render/native_palette.dart';
 import '../render/renderer.dart';
 import '../render/resolver.dart';
 import '../render/scrollspy.dart';
+import '../render/wiki_link.dart';
 import '../state/app_state.dart';
 import '../state/doc_state.dart';
 import '../state/vault_state.dart';
@@ -36,6 +37,7 @@ import '../vault/vault_source.dart';
 import '../widgets/text_scale_stepper.dart';
 import 'native_doc_view.dart';
 import 'outline_sheet.dart';
+import 'search.dart';
 
 /// The Reader — design/README.md §02: blurred header (back/filename+meta/
 /// share), a 2px scroll-progress hairline, the rendered document, and a
@@ -292,7 +294,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
       // posture).
       final override = ReaderEngine.decode(prefs.getString(_enginePrefsKey));
       var engine = resolveEngine(persistedOverride: override);
-      if (engine == ReaderEngine.native && _ensureTree(parsed) == null) {
+      if (engine == ReaderEngine.native &&
+          _ensureTree(parsed, resolver: _wikiLinkResolver(vault)) == null) {
         engine = ReaderEngine.webview;
       }
 
@@ -357,20 +360,32 @@ class _ReaderScreenState extends State<ReaderScreen> {
   /// Builds the document's [MdvTree] AT MOST ONCE, ever: the first call
   /// attempts [DocRenderer.renderTree] and caches the outcome — tree or
   /// failure — and every later call (Aa steps and theme flips never get
-  /// here; engine switches do) returns that cached verdict. Null means
-  /// the build failed: the caller falls back to the webview engine (the
-  /// class doc's fallback posture — this is also exactly what keeps a
-  /// host without the FFI library on the always-working webview path).
-  MdvTree? _ensureTree(Object doc) {
+  /// here; engine switches do) returns that cached verdict, IGNORING
+  /// [resolver] (the tree is never re-resolved). Null means the build
+  /// failed: the caller falls back to the webview engine (the class
+  /// doc's fallback posture — this is also exactly what keeps a host
+  /// without the FFI library on the always-working webview path).
+  MdvTree? _ensureTree(Object doc, {MdvResolver? resolver}) {
     if (_treeAttempted) return _tree;
     _treeAttempted = true;
     try {
-      _tree = _renderer.renderTree(doc);
+      _tree = _renderer.renderTree(doc, resolver: resolver);
     } catch (_) {
       _tree = null;
     }
     return _tree;
   }
+
+  /// The wiki-link resolver (`render/wiki_link.dart`, issue #10) for
+  /// [widget.entry] against [vault] — rebuilt fresh on every render/
+  /// renderTree call, exactly like the image resolver, since the
+  /// underlying vault-relative path list can change between calls (a
+  /// folder re-pick) even though [_ensureTree] itself only ever USES the
+  /// first one it's handed.
+  MdvResolver _wikiLinkResolver(VaultState vault) => wikiLinkResolver(
+    fromRelPath: widget.entry.relPath,
+    mdRelPaths: vault.markdownRelPaths(widget.entry.source),
+  );
 
   /// Creates the native scroll plumbing for one native activation and
   /// precomputes the list's first-paint index from the engine-neutral
@@ -399,6 +414,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final doc = _parsedDoc;
     if (doc == null) return;
     final appState = context.read<AppState>();
+    final vault = context.read<VaultState>();
     final brightness = Theme.of(context).brightness;
     final scale = appState.textScale;
 
@@ -406,7 +422,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
       doc,
       brightness: brightness,
       textScale: scale,
-      resolver: _images.toResolver(),
+      resolver: combineResolvers([
+        _images.toResolver(),
+        _wikiLinkResolver(vault),
+      ]),
     );
     _renderedScale = scale;
     _renderedBrightness = brightness;
@@ -447,9 +466,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final doc = _parsedDoc;
     final docState = _docState;
     if (doc == null || docState == null) return;
-    final tree = _ensureTree(doc);
-    if (tree == null) return;
     final vault = context.read<VaultState>();
+    final tree = _ensureTree(doc, resolver: _wikiLinkResolver(vault));
+    if (tree == null) return;
     _nativeImageResolver ??= NativeImageResolver(
       resolveBytes: (relPath) => vault.resolveRelative(widget.entry, relPath),
     ).call;
@@ -584,6 +603,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
       unawaited(_confirmAndLaunch(uri));
       return NavigationDecision.prevent;
     }
+    // The wiki-link Search-fallback marker (issue #10): a `[[...]]`
+    // target the wiki-link resolver couldn't resolve to exactly one file
+    // (`render/wiki_link.dart`'s `wikiSearchUri`) renders as this
+    // reserved scheme instead of a real href — never dereferenced as a
+    // URL, always rerouted to opening Search.
+    if (uri.scheme == wikiSearchScheme) {
+      unawaited(_openWikiSearch(uri.queryParameters['q'] ?? ''));
+      return NavigationDecision.prevent;
+    }
     if (uri.scheme.isEmpty) {
       unawaited(_openInternalRelative(request.url));
       return NavigationDecision.prevent;
@@ -626,6 +654,23 @@ class _ReaderScreenState extends State<ReaderScreen> {
       // Best-effort: no system browser available / launch declined. No UI
       // feedback per the task brief's scope — a no-op is the safe default.
     }
+  }
+
+  /// The wiki-link Search fallback (issue #10): pushes the Search screen
+  /// pre-filled with [query] (the raw `[[...]]` text) so the user can
+  /// disambiguate among same-stem files, or discover there's no matching
+  /// page, rather than hitting a silent no-op. Shared by both engines'
+  /// link-tap paths ([LinkOpenSearch] and the webview delegate's
+  /// [wikiSearchScheme] check) exactly like [_confirmAndLaunch]. Pushed
+  /// (not replaced) — same back-stack posture as every other Reader
+  /// navigation (issue #6).
+  Future<void> _openWikiSearch(String query) async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SearchScreen(initialQuery: query),
+      ),
+    );
   }
 
   /// The `mailto:`/`tel:` hand-off (issue #15), shared by both engines'
@@ -776,11 +821,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
   /// - [LinkConfirmExternal] → [_confirmAndLaunch] (issue #15): the same
   ///   confirm-then-launch flow the webview delegate's mailto:/tel:
   ///   branch uses.
+  /// - [LinkOpenSearch] → [_openWikiSearch] (issue #10): a wiki-link the
+  ///   resolver couldn't map to exactly one file.
   /// - [LinkInternalMd] → resolve against this entry's directory and
   ///   push a Reader on BOTH platforms — natively retiring the v1
   ///   webview path's Android internal-nav no-op (and, as of issue #6,
   ///   matching [_openInternalRelative]'s push on the webview's iOS
-  ///   path too — one back-stack behavior regardless of engine).
+  ///   path too — one back-stack behavior regardless of engine). A
+  ///   RESOLVED wiki-link (issue #10) lands here too — the wiki-link
+  ///   resolver already turned it into an ordinary relative `.md` target
+  ///   before the tree was ever built, so no separate case is needed.
   /// - [LinkFragment] → [_jumpToFragment]: resolves against this
   ///   document's own headings (`anchorId`), the native equivalent of
   ///   the webview engine's in-page anchor jump.
@@ -793,6 +843,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
         unawaited(_openExternal(uri));
       case LinkConfirmExternal(:final uri):
         unawaited(_confirmAndLaunch(uri));
+      case LinkOpenSearch(:final query):
+        unawaited(_openWikiSearch(query));
       case LinkInternalMd(:final target):
         unawaited(_openInternalMd(target));
       case LinkFragment(:final fragment):

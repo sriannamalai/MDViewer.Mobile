@@ -231,7 +231,19 @@ class DocRenderer {
   /// `MdvDocumentAdapter.blockIndexForLine` needs them; a spanless tree
   /// (never produced by this pipeline) would return null there and the
   /// native view degrades to a top start.
-  MdvTree renderTree(Object doc) => _mdv.renderTreeDoc(doc);
+  ///
+  /// [resolver] is the native engine's ONLY resolver hook — unlike
+  /// [render], the tree is never re-resolved after this first build (the
+  /// Reader calls [renderTree]/[renderTreeDoc] at most once per
+  /// document), so whatever [resolver] answers here is what every link
+  /// keeps for the document's lifetime. Currently just the wiki-link
+  /// resolver (`render/wiki_link.dart`, issue #10) — the native engine
+  /// resolves images separately and lazily (`native_images.dart`), so it
+  /// never needs an image resolver here.
+  MdvTree renderTree(Object doc, {MdvResolver? resolver}) => _mdv.renderTreeDoc(
+    doc,
+    options: resolver == null ? null : MdvOptions(resolver: resolver),
+  );
 
   /// Loads the library's themed palette (`theme-<mode>.json` +
   /// `highlight-<mode>.json`) for the native engine — the source of the
