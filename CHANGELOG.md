@@ -10,6 +10,67 @@ labels this repo already uses in its own `README.md`/`AGENTS.md` (**v1**, the
 Webview-only reader; **v2**, the dual-engine reader), plus point-releases for
 notable additions shipped after a milestone closed.
 
+## [v2.3] - 2026-09-22
+
+Open-issue batch: 13 issues triaged, 10 fixed, 3 deferred.
+
+### Added
+
+- **Multi-vault support** — `VaultState` now persists a list of folder
+  vaults (`vault.grants` + `vault.activeGrantId`, migrated from the old
+  single `vault.grant` key) with a Library switcher (add/switch/remove
+  chips) instead of one folder at a time. Closes #9.
+- **PDF export** — the Share sheet gained a PDF option via the
+  `printing` package's `Printing.convertHtml`, converting the same
+  Webview-rendered HTML the HTML export already produces. Closes #11.
+- **Wiki-links now navigate** — `render/wiki_link.dart` resolves
+  `[[Page Name]]` against the vault by file stem; a unique match
+  navigates like a normal relative link, an ambiguous/unresolved one
+  opens Search pre-filled with the raw text (`LinkOpenSearch`). Closes
+  #10.
+- **`mailto:`/`tel:` links now open** — a brief "Open in Mail/Phone
+  app?" confirmation sheet (`link_policy.dart`'s new
+  `LinkConfirmExternal`) hands off to `url_launcher` on both engines.
+  Closes #15.
+- **Webview-rendered documents embed the app's bundled fonts** —
+  `render/webview_fonts.dart` injects base64 `@font-face` rules instead
+  of falling back to the system font stack. Closes #13.
+- **"Open with" unresolved-reference banner** — a dismissible banner
+  prompting "Choose folder" appears when a document opened via "Open
+  with MDViewer" has unresolved relative refs, auto-retrying the same
+  filename from the newly-picked vault. Closes #8.
+- **Non-heading `#fragment` hint** — a native `#fragment` link that
+  doesn't resolve to a heading now shows a snackbar hint instead of a
+  silent no-op. Closes #4.
+
+### Changed
+
+- **Relative `.md` link navigation harmonized to PUSH on both engines**
+  — the Webview path used `pushReplacement` on iOS; it now pushes a new
+  Reader route (`pushReader`), matching the native engine's existing
+  behavior. Closes #6.
+- **Native reading progress is now pixel-weighted** — computed from
+  each visible item's own on-screen extent (falling back to the
+  average of measured extents) instead of counting every block as one
+  equal unit. Closes #5.
+
+### Fixed
+
+- **Native Mermaid diagrams re-render on a theme flip** —
+  `MermaidDiagramView` compares the ambient brightness against the
+  theme its cached SVG was rendered for and re-invokes the offscreen
+  bridge on a mismatch. Closes #7.
+
+### Known limitations
+
+- **Android Webview relative-`.md` navigation** (#12) — a `baseUrl`
+  fix is identified but risks changing iOS's own page-load navigation
+  event too; needs a real device/simulator pass before it's safe to
+  ship.
+- **Exact footnote-definition scroll** (#3) and **signed release
+  artifacts** (#14) need a plugin-side primitive and signing secrets
+  respectively, neither of which this repo can provide alone.
+
 ## [v2.2] - 2026-08-28
 
 Cross-Repo Rendering Engine Synchronization Plan, Phase 2: consumes the
