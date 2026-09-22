@@ -18,17 +18,43 @@ import '../vault/vault_source.dart';
 
 /// The app's single source of truth for "what documents exist and where".
 ///
-/// Owns both always-present content (the bundled sample vault) and the
-/// at-most-one user-picked folder vault, plus Recents. Screens (Library,
-/// Reader, Search) read [entries]/[sampleEntries]/[recents] and call
+/// Owns both always-present content (the bundled sample vault) and a LIST
+/// of user-picked folder vaults (issue #9 — v1's original design allowed
+/// only one at a time), plus Recents. Screens (Library, Reader, Search)
+/// read [entries]/[sampleEntries]/[recents] and call
 /// [pickFolder]/[readDoc]/[resolveRelative]; nothing above this layer talks
 /// to a [VaultProvider] or `shared_preferences` directly.
 ///
-/// [entries] is the current folder vault's tree (empty until a folder is
-/// picked or a persisted grant is restored); [sampleEntries] is always
+/// [entries] is always the ACTIVE folder vault's tree (empty until a
+/// folder is picked, or none restores); [sampleEntries] is always
 /// populated once [init] completes — the Library screen renders them as
 /// separate sections (design/README.md §01: vault label = folder name,
 /// SAMPLES section, RECENT section).
+///
+/// ## Multi-vault design (issue #9)
+///
+/// [vaultGrants] persists every folder the user has ever picked; exactly
+/// one of them (or none) is ACTIVE at a time ([activeGrantId]/[grant]).
+/// [VaultProvider]'s own contract (see its class doc) only ever holds ONE
+/// grant's native access active at a time — an iOS security-scoped
+/// bookmark's `startAccessingSecurityScopedResource()` call, an Android
+/// SAF permission check — so [switchVault] re-runs [VaultProvider.restore]
+/// for whichever grant becomes active, exactly like [init] does for the
+/// persisted active grant at cold start. [entries]/[VaultSource.folder]
+/// lookups ([findByRelPath], [resolveRelative], [markdownRelPaths]) are
+/// therefore always scoped to whichever vault is CURRENTLY active — a
+/// [VaultEntry] resolved from a non-active vault (e.g. an older Recent
+/// row) won't resolve again until its vault is made active. Broadening
+/// [VaultEntry]/[VaultSource] to carry a per-instance vault id (so every
+/// vault's tree could be Browse-able and resolvable simultaneously) would
+/// be a materially larger change than this issue's own "reasonably-scoped
+/// version" framing calls for; this is the pragmatic middle ground.
+///
+/// Persists as [_grantsKey] (a JSON array of [VaultGrant]s) +
+/// [_activeGrantIdKey] (which one is active). [init] migrates a v1
+/// single-grant install (the old [_legacyGrantKey]) into this shape
+/// exactly once, so an existing user's one folder survives the upgrade as
+/// a one-item, active vault list.
 class VaultState extends ChangeNotifier {
   VaultState({
     VaultProvider? sampleProvider,
@@ -39,7 +65,19 @@ class VaultState extends ChangeNotifier {
        _openedFileProvider = openedFileProvider ?? OpenedFileVaultProvider();
 
   static const _recentsKey = 'vault.recents';
-  static const _grantKey = 'vault.grant';
+
+  /// v1's single-grant key — read once, at [init], to migrate an existing
+  /// install onto [_grantsKey]; never written again after that.
+  static const _legacyGrantKey = 'vault.grant';
+
+  /// The persisted list of every folder vault the user has picked (issue
+  /// #9), as a JSON array of [VaultGrant.toJson] objects.
+  static const _grantsKey = 'vault.grants';
+
+  /// Which of [_grantsKey]'s entries (by [VaultGrant.id]) is active, or
+  /// absent when none is (no vaults, or the active one failed to restore
+  /// and nothing else could take its place).
+  static const _activeGrantIdKey = 'vault.activeGrantId';
 
   final VaultProvider _sampleProvider;
   final VaultProvider _folderProvider;
@@ -54,12 +92,27 @@ class VaultState extends ChangeNotifier {
   List<VaultEntry> _entries = const [];
   List<VaultEntry> get entries => _entries;
 
-  VaultGrant? _grant;
-  VaultGrant? get grant => _grant;
+  List<VaultGrant> _vaultGrants = const [];
+
+  /// Every folder vault the user has picked, in the order they were added
+  /// — the Library screen's vault switcher lists these (issue #9).
+  List<VaultGrant> get vaultGrants => _vaultGrants;
+
+  String? _activeGrantId;
+
+  /// The [VaultGrant.id] of the currently active folder vault, or null.
+  String? get activeGrantId => _activeGrantId;
+
+  /// The currently ACTIVE folder vault's grant, or null when none is
+  /// active. Kept as the pre-#9 API surface (`grant`/`vaultName`) so
+  /// every existing caller (Reader's vault label, Library's `hasVault`
+  /// check) keeps working unchanged — they only ever cared about "the one
+  /// folder vault", which is now "whichever one is active".
+  VaultGrant? get grant => _grantById(_activeGrantId);
 
   /// The active folder vault's display name (design's "vault label"), or
-  /// null when no folder has been picked/restored yet.
-  String? get vaultName => _grant?.displayName;
+  /// null when no folder is active.
+  String? get vaultName => grant?.displayName;
 
   List<RecentEntry> _recents = const [];
   List<RecentEntry> get recents => _recents;
@@ -67,11 +120,19 @@ class VaultState extends ChangeNotifier {
   final Map<String, VaultEntry> _sampleFlat = {};
   final Map<String, VaultEntry> _folderFlat = {};
 
-  /// Loads recents, the bundled sample vault, and (if one was persisted and
-  /// still resolves) the last folder grant. Must be awaited before the
-  /// splash screen dismisses to Library (Task 3) — [ready] flips true only
-  /// once this completes, matching the spec's "dismisses when the vault
-  /// index is ready".
+  VaultGrant? _grantById(String? id) {
+    if (id == null) return null;
+    for (final g in _vaultGrants) {
+      if (g.id == id) return g;
+    }
+    return null;
+  }
+
+  /// Loads recents, the bundled sample vault, every persisted folder-vault
+  /// grant, and (if the active one still resolves) its entries. Must be
+  /// awaited before the splash screen dismisses to Library (Task 3) —
+  /// [ready] flips true only once this completes, matching the spec's
+  /// "dismisses when the vault index is ready".
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -84,53 +145,157 @@ class VaultState extends ChangeNotifier {
       ..clear()
       ..addAll(_flatten(_sampleEntries));
 
-    // Guarded the same way RecentsStore.decode guards recents: a corrupt
-    // (not just wrong-shape, but unparseable) persisted grant blob must
-    // degrade to "no grant" rather than throwing out of init().
-    VaultGrant? savedGrant;
-    try {
-      final grantRaw = prefs.getString(_grantKey);
-      savedGrant = grantRaw == null
-          ? null
-          : VaultGrant.fromJson(jsonDecode(grantRaw));
-    } catch (_) {
-      savedGrant = null;
-    }
-    if (savedGrant != null) {
-      final restored = await _folderProvider.restore(savedGrant);
-      if (restored) {
-        _grant = savedGrant;
-        await _reloadFolderEntries();
-      } else {
-        // Stale bookmark / revoked permission: drop the persisted grant so
-        // the Library screen falls back to its empty-vault "Choose folder"
-        // prompt instead of silently retrying a dead grant on every launch.
-        await prefs.remove(_grantKey);
+    _loadVaultGrants(prefs);
+
+    // Try the active grant first; if it fails to restore (stale bookmark /
+    // revoked permission), drop it and fall through to the next one, same
+    // "never retry a dead grant blindly" posture v1 had — just extended to
+    // "try the rest of the list" instead of "give up entirely".
+    var candidate = _grantById(_activeGrantId);
+    while (candidate != null) {
+      if (await _folderProvider.restore(candidate)) {
+        _activeGrantId = candidate.id;
+        await _reloadFolderEntries(candidate);
+        break;
       }
+      _vaultGrants = _vaultGrants.where((g) => g.id != candidate!.id).toList();
+      _activeGrantId = null;
+      candidate = _vaultGrants.isEmpty ? null : _vaultGrants.first;
     }
+
+    await _persistVaultGrants(prefs);
+    if (prefs.containsKey(_legacyGrantKey)) await prefs.remove(_legacyGrantKey);
 
     _ready = true;
     notifyListeners();
   }
 
-  /// Prompts the user to pick a folder via the native picker. Returns false
-  /// if the user cancelled (nothing changes); true once the new grant is
-  /// persisted and its entries are loaded.
+  /// Populates [_vaultGrants]/[_activeGrantId] from [_grantsKey] if
+  /// present; otherwise migrates a v1 single-grant install from
+  /// [_legacyGrantKey] (making it the sole, active vault). A corrupt/
+  /// unparseable value under either key degrades to "no vaults" — the
+  /// same defensive posture v1's single-grant load had — rather than
+  /// throwing out of [init].
+  void _loadVaultGrants(SharedPreferences prefs) {
+    try {
+      final grantsRaw = prefs.getString(_grantsKey);
+      if (grantsRaw != null) {
+        final decoded = jsonDecode(grantsRaw);
+        if (decoded is List) {
+          _vaultGrants = [for (final item in decoded) ?VaultGrant.fromJson(item)];
+        }
+        _activeGrantId = prefs.getString(_activeGrantIdKey);
+        return;
+      }
+
+      final legacyRaw = prefs.getString(_legacyGrantKey);
+      if (legacyRaw != null) {
+        final migrated = VaultGrant.fromJson(jsonDecode(legacyRaw));
+        if (migrated != null) {
+          _vaultGrants = [migrated];
+          _activeGrantId = migrated.id;
+        }
+      }
+    } catch (_) {
+      _vaultGrants = const [];
+      _activeGrantId = null;
+    }
+  }
+
+  Future<void> _persistVaultGrants(SharedPreferences prefs) async {
+    await prefs.setString(
+      _grantsKey,
+      jsonEncode(_vaultGrants.map((g) => g.toJson()).toList()),
+    );
+    final activeId = _activeGrantId;
+    if (activeId == null) {
+      await prefs.remove(_activeGrantIdKey);
+    } else {
+      await prefs.setString(_activeGrantIdKey, activeId);
+    }
+  }
+
+  /// Prompts the user to pick a folder via the native picker and ADDS it
+  /// to [vaultGrants] (issue #9 — v1 replaced the single grant; this
+  /// keeps every previously-picked vault too), making the new one active.
+  /// Returns false if the user cancelled (nothing changes); true once the
+  /// new grant is persisted and its entries are loaded. Re-picking a
+  /// folder the app already has a grant for (same [VaultGrant.id])
+  /// replaces that entry in place rather than duplicating it.
   Future<bool> pickFolder() async {
     final grant = await _folderProvider.pickFolder();
     if (grant == null) return false;
 
-    _grant = grant;
+    _vaultGrants = [
+      ..._vaultGrants.where((g) => g.id != grant.id),
+      grant,
+    ];
+    _activeGrantId = grant.id;
+    await _reloadFolderEntries(grant);
+
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_grantKey, jsonEncode(grant.toJson()));
-    await _reloadFolderEntries();
+    await _persistVaultGrants(prefs);
     notifyListeners();
     return true;
   }
 
-  Future<void> _reloadFolderEntries() async {
-    final grant = _grant;
-    if (grant == null) return;
+  /// Switches the active folder vault to [grantId] (issue #9's Library
+  /// switcher): re-[VaultProvider.restore]s its native access (the
+  /// provider only ever holds one grant's access active — see the class
+  /// doc), reloads its entries, and persists the new active id. Returns
+  /// false — leaving the PREVIOUS vault active, unchanged — when
+  /// [grantId] isn't in [vaultGrants] or its restore fails (a revoked/
+  /// stale grant is NOT dropped here, unlike [init]'s cold-start pass — a
+  /// user explicitly tapping a vault that briefly fails to restore
+  /// shouldn't lose it from the list; [removeVault] is the explicit,
+  /// deliberate way to drop one).
+  Future<bool> switchVault(String grantId) async {
+    if (grantId == _activeGrantId) return true;
+    final target = _grantById(grantId);
+    if (target == null) return false;
+
+    if (!await _folderProvider.restore(target)) return false;
+
+    _activeGrantId = grantId;
+    await _reloadFolderEntries(target);
+
+    final prefs = await SharedPreferences.getInstance();
+    await _persistVaultGrants(prefs);
+    notifyListeners();
+    return true;
+  }
+
+  /// Removes [grantId] from [vaultGrants] (issue #9's Library switcher).
+  /// If it was the active vault, automatically activates the next
+  /// remaining one (if any restores) so removing one vault doesn't
+  /// silently blank the Library's folder section when others are still
+  /// configured; falls back to "no active vault" (the empty-vault prompt)
+  /// if none remain or none restores. There's no native "revoke" call
+  /// ([VaultProvider] exposes none) — the OS-side grant simply becomes
+  /// unused, the same as v1 replacing a grant always implicitly did.
+  Future<void> removeVault(String grantId) async {
+    final wasActive = grantId == _activeGrantId;
+    _vaultGrants = _vaultGrants.where((g) => g.id != grantId).toList();
+
+    if (wasActive) {
+      _activeGrantId = null;
+      _entries = const [];
+      _folderFlat.clear();
+      for (final candidate in _vaultGrants) {
+        if (await _folderProvider.restore(candidate)) {
+          _activeGrantId = candidate.id;
+          await _reloadFolderEntries(candidate);
+          break;
+        }
+      }
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await _persistVaultGrants(prefs);
+    notifyListeners();
+  }
+
+  Future<void> _reloadFolderEntries(VaultGrant grant) async {
     final list = await _folderProvider.list(grant);
     _entries = VaultIndex.build(list, VaultSource.folder);
     _folderFlat

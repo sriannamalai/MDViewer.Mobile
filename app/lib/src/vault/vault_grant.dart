@@ -28,5 +28,12 @@ class VaultGrant {
   }
 
   @override
+  bool operator ==(Object other) =>
+      other is VaultGrant && other.id == id && other.displayName == displayName;
+
+  @override
+  int get hashCode => Object.hash(id, displayName);
+
+  @override
   String toString() => 'VaultGrant($displayName)';
 }

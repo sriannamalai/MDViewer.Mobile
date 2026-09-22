@@ -8,6 +8,7 @@ import '../tokens.dart';
 import '../util/relative_time.dart';
 import '../vault/recent_entry.dart';
 import '../vault/vault_entry.dart';
+import '../vault/vault_grant.dart';
 import '../widgets/file_row.dart';
 import '../widgets/library_header.dart';
 import '../widgets/library_search_field.dart';
@@ -88,12 +89,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
   /// the tap handler unhandled before the Reader's error UI could show it.
   Future<void> _openFile(VaultEntry entry) => pushReader(context, entry);
 
+  /// Issue #9's vault switcher: [VaultState.switchVault], surfaced the
+  /// same way a failed pick already is (a dismissible banner) rather
+  /// than a silent no-op, since a failed restore (revoked/stale grant)
+  /// leaves the PREVIOUS vault active — the user needs to know why
+  /// tapping a chip didn't change anything.
+  Future<void> _handleSwitchVault(VaultState vault, String grantId) async {
+    final ok = await vault.switchVault(grantId);
+    if (!ok && mounted) {
+      setState(
+        () => _pickError =
+            "Couldn't switch to that vault — it may need to be re-added.",
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = AppTokens.of(context);
     final vault = context.watch<VaultState>();
     final mostRecent = vault.recents.isEmpty ? null : vault.recents.first;
     final hasVault = vault.grant != null;
+    final hasAnyVaultGrant = vault.vaultGrants.isNotEmpty;
 
     return Scaffold(
       backgroundColor: tokens.bg,
@@ -113,24 +130,34 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   vertical: 8,
                 ),
                 children: [
-                  if (!hasVault)
+                  if (!hasAnyVaultGrant)
                     _EmptyVaultPrompt(
                       busy: _picking,
                       onChooseFolder: () => _handleChooseFolder(vault),
                     )
-                  else
-                    _TreeSection(
-                      label: vault.vaultName!,
-                      topPadding: 10,
-                      entries: vault.entries,
-                      isExpanded: _isExpanded,
-                      onToggle: _toggleExpanded,
-                      onTapFile: _openFile,
-                      isActive: (entry) => _isActive(entry, mostRecent),
+                  else ...[
+                    _VaultSwitcher(
+                      grants: vault.vaultGrants,
+                      activeGrantId: vault.activeGrantId,
+                      busy: _picking,
+                      onSelect: (id) => _handleSwitchVault(vault, id),
+                      onRemove: (id) => vault.removeVault(id),
+                      onAdd: () => _handleChooseFolder(vault),
                     ),
+                    if (hasVault)
+                      _TreeSection(
+                        label: vault.vaultName!,
+                        topPadding: 6,
+                        entries: vault.entries,
+                        isExpanded: _isExpanded,
+                        onToggle: _toggleExpanded,
+                        onTapFile: _openFile,
+                        isActive: (entry) => _isActive(entry, mostRecent),
+                      ),
+                  ],
                   _TreeSection(
                     label: 'Samples',
-                    topPadding: hasVault ? 18 : 10,
+                    topPadding: hasAnyVaultGrant ? 18 : 10,
                     entries: vault.sampleEntries,
                     isExpanded: _isExpanded,
                     onToggle: _toggleExpanded,
@@ -148,6 +175,138 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Issue #9's multi-vault switcher: one pill per picked folder vault (tap
+/// to make it active, a small ✕ to remove it) plus a trailing "+ Add"
+/// pill that opens the folder picker — [VaultState.pickFolder] now ADDS
+/// a vault instead of replacing the current one (see its doc comment).
+/// Correctness of the underlying switch/persist/remove logic is this
+/// issue's priority over pixel-perfect chip styling (no design spec
+/// exists for this row at all — the v1 design only ever showed one
+/// vault), so this reuses the app's existing pill/token conventions
+/// (`_OutlinePill`-style Material+InkWell, `accentSoft`/`panel2` states)
+/// rather than inventing new chrome.
+class _VaultSwitcher extends StatelessWidget {
+  const _VaultSwitcher({
+    required this.grants,
+    required this.activeGrantId,
+    required this.busy,
+    required this.onSelect,
+    required this.onRemove,
+    required this.onAdd,
+  });
+
+  final List<VaultGrant> grants;
+  final String? activeGrantId;
+  final bool busy;
+  final void Function(String grantId) onSelect;
+  final void Function(String grantId) onRemove;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppTokens.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 10, 8, 0),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final grant in grants) ...[
+              _VaultChip(
+                label: grant.displayName,
+                active: grant.id == activeGrantId,
+                onTap: () => onSelect(grant.id),
+                onRemove: () => onRemove(grant.id),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Material(
+              color: tokens.panel2,
+              borderRadius: BorderRadius.circular(AppGeometry.pillRadius),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppGeometry.pillRadius),
+                onTap: busy ? null : onAdd,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  child: Text(
+                    '+ Add',
+                    style: TextStyle(
+                      fontFamily: AppFonts.ibmPlexSans,
+                      fontSize: AppTypeScale.uiTextSize,
+                      fontWeight: FontWeight.w600,
+                      color: tokens.text2,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VaultChip extends StatelessWidget {
+  const _VaultChip({
+    required this.label,
+    required this.active,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppTokens.of(context);
+
+    return Material(
+      color: active ? tokens.accentSoft : tokens.panel2,
+      borderRadius: BorderRadius.circular(AppGeometry.pillRadius),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppGeometry.pillRadius),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontFamily: AppFonts.ibmPlexSans,
+                  fontSize: AppTypeScale.uiTextSize,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                  color: active ? tokens.accent : tokens.text,
+                ),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: onRemove,
+                child: Text(
+                  '✕',
+                  style: TextStyle(
+                    fontSize: AppTypeScale.searchClearGlyphSize,
+                    color: active ? tokens.accent : tokens.text3,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
