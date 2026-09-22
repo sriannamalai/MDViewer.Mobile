@@ -12,15 +12,19 @@ import 'mermaid_bridge.dart';
 /// this document, so no offscreen webview was ever created — see
 /// `mermaid_bridge.dart`'s class doc).
 ///
-/// One render request per widget lifetime: [didChangeDependencies] fires
-/// it at most once (guarded by [_future]), so an Aa/theme rebuild reuses
-/// the cached request instead of re-rendering the same diagram — the
-/// request's theme is fixed at first build, matching every other native
-/// block's "styled at build time, not re-rendered" contract EXCEPT that
-/// a THEME FLIP after the diagram already rendered keeps its original
-/// light/dark colors until the document is reopened; an acceptable
-/// first-cut gap (documented in the app README) rather than added
-/// complexity for a rare mid-read theme change.
+/// One render request per THEME [didChangeDependencies] observes:
+/// re-invoking [MermaidBridge.render] on every rebuild would re-run the
+/// offscreen bridge for no reason (an Aa text-scale step, a hierarchy
+/// rebuild that doesn't touch brightness at all), so the request is
+/// cached and reused exactly like every other native block's "styled at
+/// build time" contract — UNTIL the ambient brightness actually flips,
+/// at which point [_renderedDark] no longer matches and a fresh request
+/// is issued with the new mermaid `theme` argument. This closes the gap
+/// the class doc used to carry (a diagram kept its original light/dark
+/// colors until the document was reopened) — every other native block
+/// already restyles in place on a theme flip; a diagram now does too, at
+/// the cost of one extra offscreen render per flip while a mermaid
+/// document is open.
 class MermaidDiagramView extends StatefulWidget {
   const MermaidDiagramView({
     super.key,
@@ -40,12 +44,23 @@ class MermaidDiagramView extends StatefulWidget {
 class _MermaidDiagramViewState extends State<MermaidDiagramView> {
   Future<MermaidRenderResult>? _future;
 
+  /// The brightness [_future]'s in-flight/completed request was issued
+  /// for — null until the first request. Compared against the CURRENT
+  /// brightness on every [didChangeDependencies] call (which Flutter
+  /// invokes whenever an ancestor `Theme`/`MediaQuery` this widget reads
+  /// changes, not just on first build) so a theme flip is the only thing
+  /// that triggers a re-render; an Aa step or unrelated rebuild leaves a
+  /// same-brightness request untouched.
+  bool? _renderedDark;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final bridge = widget.bridge;
-    if (bridge == null || _future != null) return;
+    if (bridge == null) return;
     final dark = Theme.of(context).brightness == Brightness.dark;
+    if (_future != null && dark == _renderedDark) return;
+    _renderedDark = dark;
     _future = bridge.render(
       id: widget.node.id,
       source: widget.node.source,
