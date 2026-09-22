@@ -102,15 +102,21 @@ class _FakeDocRenderer extends DocRenderer {
   /// assert a re-render still carries the images prefetched at load time.
   MdvResolver? lastResolver;
 
+  /// The `fontFaceCss` the most recent [render] call received (issue
+  /// #13's webview font-embedding hook).
+  String? lastFontFaceCss;
+
   @override
   String render(
     Object doc, {
     required Brightness brightness,
     required double textScale,
     MdvResolver? resolver,
+    String? fontFaceCss,
   }) {
     renderCalls++;
     lastResolver = resolver;
+    lastFontFaceCss = fontFaceCss;
     return '<html><body><h1 data-md-line="1">Hello</h1></body></html>';
   }
 }
@@ -1504,6 +1510,24 @@ void main() {
       wikiSearchScheme,
       reason: 'an unresolved target falls back to the search marker',
     );
+  });
+
+  testWidgets('render (webview) receives the embedded font-face CSS '
+      '(issue #13)', (tester) async {
+    final entry = _sampleEntry();
+    final vault = await _vaultWith(entry, '# Hello\n\none two three\n');
+    final appState = AppState();
+    await appState.init();
+    final renderer = _FakeDocRenderer();
+
+    await tester.pumpWidget(
+      _wrap(vault, appState, ReaderScreen(entry: entry, renderer: renderer)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(renderer.lastFontFaceCss, isNotNull);
+    expect(renderer.lastFontFaceCss, contains('@font-face'));
+    expect(renderer.lastFontFaceCss, contains(AppFonts.ibmPlexSans));
   });
 
   testWidgets('render (webview) combines the image resolver with the '

@@ -25,6 +25,7 @@ import '../render/native_palette.dart';
 import '../render/renderer.dart';
 import '../render/resolver.dart';
 import '../render/scrollspy.dart';
+import '../render/webview_fonts.dart';
 import '../render/wiki_link.dart';
 import '../state/app_state.dart';
 import '../state/doc_state.dart';
@@ -417,6 +418,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final vault = context.read<VaultState>();
     final brightness = Theme.of(context).brightness;
     final scale = appState.textScale;
+    // Issue #13: embeds this app's bundled fonts into the Webview page so
+    // its body/headings/code use the design's actual typefaces instead of
+    // the system stack theme/base.css falls back to — cached process-wide
+    // after the first load (WebviewFonts.ensureLoaded's doc comment), so
+    // this await resolves synchronously on every render after the first.
+    // Null (an unreachable asset, which should never happen for files
+    // this app ships itself) just keeps the system stack, same as before
+    // this existed.
+    final fontFaceCss = await WebviewFonts.ensureLoaded();
+    if (!mounted) return;
 
     final html = _renderer.render(
       doc,
@@ -426,6 +437,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _images.toResolver(),
         _wikiLinkResolver(vault),
       ]),
+      fontFaceCss: fontFaceCss,
     );
     _renderedScale = scale;
     _renderedBrightness = brightness;

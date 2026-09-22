@@ -297,18 +297,27 @@ class DocRenderer {
   /// copy is bridged host-side instead: `codecopy.dart`'s injected script
   /// posts the code text over the `CodeCopy` JavaScript channel and
   /// reader.dart writes it with `Clipboard.setData`.
+  ///
+  /// [fontFaceCss] (issue #13, `render/webview_fonts.dart`'s
+  /// `WebviewFonts.ensureLoaded`) is prepended before [mobileProseOverrideCss]
+  /// in the same `extraCss` string — embedding this app's bundled fonts as
+  /// `@font-face` `data:` URIs so the Webview-rendered body uses the
+  /// design's actual typefaces instead of the system font stack
+  /// `theme/base.css` falls back to. Null (the default) leaves the page on
+  /// the system stack, exactly as before this existed.
   String render(
     Object doc, {
     required Brightness brightness,
     required double textScale,
     MdvResolver? resolver,
+    String? fontFaceCss,
   }) {
     return _mdv.renderDoc(
       doc,
       options: MdvOptions(
         theme: brightness == Brightness.dark ? 'dark' : 'light',
         sourceMap: true,
-        extraCss: mobileProseOverrideCss(textScale),
+        extraCss: (fontFaceCss ?? '') + mobileProseOverrideCss(textScale),
         codeHeader: true,
         resolver: resolver,
       ),

@@ -309,6 +309,7 @@ class FakeTreeDocRenderer extends DocRenderer {
     required Brightness brightness,
     required double textScale,
     MdvResolver? resolver,
+    String? fontFaceCss,
   }) {
     renderCalls++;
     lastResolver = resolver;

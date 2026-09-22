@@ -309,6 +309,7 @@ class _NoopDocRenderer extends DocRenderer {
     required Brightness brightness,
     required double textScale,
     MdvResolver? resolver,
+    String? fontFaceCss,
   }) => '<html></html>';
 }
 
